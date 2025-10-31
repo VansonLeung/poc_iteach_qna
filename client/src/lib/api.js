@@ -94,4 +94,24 @@ export const submissionAnswerAPI = {
   getVersions: (id) => api.get(`/submission-answers/${id}/versions`),
 };
 
+// Rubric APIs
+export const rubricAPI = {
+  getAll: (params) => api.get('/rubrics', { params }),
+  getById: (id) => api.get(`/rubrics/${id}`),
+  create: (data) => api.post('/rubrics', data),
+  update: (id, data) => api.put(`/rubrics/${id}`, data),
+  archive: (id) => api.delete(`/rubrics/${id}`),
+  addCriterion: (rubricId, data) => api.post(`/rubrics/${rubricId}/criteria`, data),
+  updateCriterion: (rubricId, criterionId, data) => api.put(`/rubrics/${rubricId}/criteria/${criterionId}`, data),
+  deleteCriterion: (rubricId, criterionId) => api.delete(`/rubrics/${rubricId}/criteria/${criterionId}`),
+};
+
+// Question Scoring APIs
+export const questionScoringAPI = {
+  get: (questionId) => api.get(`/question-scoring/${questionId}`),
+  create: (data) => api.post('/question-scoring', data),
+  update: (questionId, data) => api.put(`/question-scoring/${questionId}`, data),
+  delete: (questionId) => api.delete(`/question-scoring/${questionId}`),
+};
+
 export default api;

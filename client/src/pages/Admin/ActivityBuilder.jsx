@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { activityAPI, activityElementAPI, questionAPI } from '@/lib/api';
+import { activityAPI, activityElementAPI, questionAPI, rubricAPI, questionScoringAPI } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ChevronLeft, Save, Plus, Trash2, GripVertical, FolderOpen, FileQuestion, Edit, X } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ChevronLeft, Save, Plus, Trash2, GripVertical, FolderOpen, FileQuestion, Edit, X, Award, Target } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import {
   DndContext,
@@ -78,10 +79,18 @@ function DraggableElement({ element, onDelete, onAddChild, onEdit, onEditSection
           {element.description && (
             <p className="text-xs text-muted-foreground">{element.description}</p>
           )}
-          <p className="text-xs text-muted-foreground mt-1">
-            Order: {element.order_index} • {element.element_type}
-            {element.parent_element_id && ' • nested'}
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-xs text-muted-foreground">
+              Order: {element.order_index} • {element.element_type}
+              {element.parent_element_id && ' • nested'}
+            </p>
+            {element.element_type === 'question' && element.rubric_title && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-primary/10 text-primary rounded-full border border-primary/20">
+                <Award className="h-3 w-3" />
+                {element.rubric_title}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-1">
@@ -241,6 +250,23 @@ export default function ActivityBuilder() {
     bodyHtml: '',
     tags: [],
   });
+  const [questionEditorTab, setQuestionEditorTab] = useState('content');
+
+  // Scoring configuration
+  const [rubrics, setRubrics] = useState([]);
+  const [scoringConfig, setScoringConfig] = useState({
+    rubricId: '',
+    scoringType: 'manual',
+    weight: 1.0,
+    maxScore: 10,
+    expectedAnswers: {},
+    autoGradeConfig: {
+      caseSensitive: false,
+      partialMatch: false,
+    },
+    fieldScores: {},
+  });
+  const [interactiveElements, setInteractiveElements] = useState([]);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -558,51 +584,7 @@ export default function ActivityBuilder() {
           description: "Elements reordered successfully.",
         });
       } else {
-        // Case 3: Moving between different parents (cross-parent drag)
-        console.log('Moving between different parents:', { activeParentId, overParentId });
-
-        // Prevent dropping section into itself or its descendants
-        if (active.data.current?.element?.element_type === 'section') {
-          if (isDescendant(active.data.current.element, overId) ||
-              (overParentId && isDescendant(active.data.current.element, overParentId))) {
-            toast({
-              variant: "destructive",
-              title: "Cannot move",
-              description: "Cannot move a section into itself or its descendants.",
-            });
-            return;
-          }
-        }
-
-        // Get the target siblings list to determine the new position
-        const targetSiblings = overParentId
-          ? findElementById(elements, overParentId)?.children || []
-          : elements;
-
-        const overIndex = targetSiblings.findIndex(el => el.id === overId);
-
-        // Move the element to the new parent and position
-        await activityElementAPI.update(activeId, {
-          parentElementId: overParentId || null,
-          orderIndex: overIndex,
-        });
-
-        // Update order indices for remaining items in target list
-        for (let i = overIndex + 1; i < targetSiblings.length; i++) {
-          if (targetSiblings[i].id !== activeId) {
-            await activityElementAPI.update(targetSiblings[i].id, {
-              orderIndex: i + 1,
-            });
-          }
-        }
-
-        await fetchElements();
-
-        toast({
-          variant: "success",
-          title: "Element moved",
-          description: `Moved to ${overParentId ? 'section' : 'root level'}.`,
-        });
+        console.log('Different parents - no action taken:', { activeParentId, overParentId });
       }
     } catch (err) {
       console.error('Drag error:', err);
@@ -635,6 +617,95 @@ export default function ActivityBuilder() {
     }
     return false;
   };
+
+  // Parse interactive elements from HTML
+  const parseInteractiveElements = (html) => {
+    if (!html) return [];
+    
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const elements = [];
+
+    // Find all elements with data-element-uuid
+    const interactiveNodes = doc.querySelectorAll('[data-element-uuid]');
+    
+    interactiveNodes.forEach((node) => {
+      const uuid = node.getAttribute('data-element-uuid');
+      const type = node.getAttribute('data-element-type');
+      const label = node.getAttribute('data-element-label') || 
+                   node.closest('.form-group')?.querySelector('label')?.textContent?.trim() ||
+                   'Unlabeled element';
+      
+      // Check if this UUID already exists
+      if (!elements.find(el => el.uuid === uuid)) {
+        const element = {
+          uuid,
+          type: type || node.tagName.toLowerCase(),
+          label,
+          inputType: node.type || 'text',
+        };
+
+        // For radio and checkbox, extract the value and create option info
+        if (type === 'radio' || type === 'checkbox') {
+          element.value = node.value || node.getAttribute('value') || '';
+          element.optionLabel = label;
+          
+          // Try to find the group name for radio buttons
+          if (type === 'radio') {
+            element.groupName = node.name || node.getAttribute('name') || '';
+          }
+        }
+
+        elements.push(element);
+      }
+    });
+
+    // Group radio buttons by name
+    const groupedElements = [];
+    const radioGroups = {};
+    const processedUuids = new Set();
+
+    elements.forEach((el) => {
+      if (processedUuids.has(el.uuid)) return;
+
+      if (el.type === 'radio' && el.groupName) {
+        if (!radioGroups[el.groupName]) {
+          radioGroups[el.groupName] = {
+            uuid: `radio-group-${el.groupName}`,
+            type: 'radio-group',
+            label: el.label.replace(/Option \d+/i, '').trim() || 'Radio Group',
+            groupName: el.groupName,
+            options: []
+          };
+        }
+        radioGroups[el.groupName].options.push({
+          uuid: el.uuid,
+          value: el.value,
+          label: el.optionLabel
+        });
+        processedUuids.add(el.uuid);
+      } else {
+        groupedElements.push(el);
+      }
+    });
+
+    // Add radio groups
+    Object.values(radioGroups).forEach(group => {
+      groupedElements.push(group);
+    });
+
+    return groupedElements;
+  };
+
+  // Update interactive elements when question body changes
+  useEffect(() => {
+    if (questionFormData.bodyHtml) {
+      const elements = parseInteractiveElements(questionFormData.bodyHtml);
+      setInteractiveElements(elements);
+    } else {
+      setInteractiveElements([]);
+    }
+  }, [questionFormData.bodyHtml]);
 
   // Section editor functions
   const handleEditSection = (element) => {
@@ -675,6 +746,48 @@ export default function ActivityBuilder() {
   };
 
   // Question editor functions
+  const fetchRubrics = async () => {
+    try {
+      const response = await rubricAPI.getAll({ status: 'active' });
+      setRubrics(response.data.rubrics || []);
+    } catch (err) {
+      console.error('Error fetching rubrics:', err);
+    }
+  };
+
+  const fetchScoringConfig = async (questionId) => {
+    try {
+      const response = await questionScoringAPI.get(questionId);
+      const scoring = response.data.scoring;
+      setScoringConfig({
+        rubricId: scoring.rubric_id || '',
+        scoringType: scoring.scoring_type || 'manual',
+        weight: scoring.weight || 1.0,
+        maxScore: scoring.max_score || 10,
+        expectedAnswers: scoring.expected_answers || {},
+        autoGradeConfig: scoring.auto_grade_config || {
+          caseSensitive: false,
+          partialMatch: false,
+        },
+        fieldScores: scoring.field_scores || {},
+      });
+    } catch (err) {
+      // No scoring config exists yet, use defaults
+      setScoringConfig({
+        rubricId: '',
+        scoringType: 'manual',
+        weight: 1.0,
+        maxScore: 10,
+        expectedAnswers: {},
+        autoGradeConfig: {
+          caseSensitive: false,
+          partialMatch: false,
+        },
+        fieldScores: {},
+      });
+    }
+  };
+
   const handleEditQuestion = async (element) => {
     if (!element.question_id) return;
 
@@ -688,6 +801,12 @@ export default function ActivityBuilder() {
         bodyHtml: question.body_html || '',
         tags: question.tags || [],
       });
+
+      // Fetch rubrics and scoring config
+      await fetchRubrics();
+      await fetchScoringConfig(question.id);
+
+      setQuestionEditorTab('content');
       setQuestionEditorOpen(true);
     } catch (err) {
       console.error('Error fetching question:', err);
@@ -706,33 +825,61 @@ export default function ActivityBuilder() {
       bodyHtml: '',
       tags: [],
     });
+    setScoringConfig({
+      rubricId: '',
+      scoringType: 'manual',
+      weight: 1.0,
+      expectedAnswers: {},
+    });
+
+    // Fetch rubrics for new question
+    fetchRubrics();
+
+    setQuestionEditorTab('content');
     setQuestionEditorOpen(true);
   };
 
   const handleSaveQuestion = async () => {
     try {
-      let newQuestionId = null;
+      let questionId = editingQuestion?.id || null;
+      let scoringError = null;
 
       if (editingQuestion) {
         // Update existing question
         await questionAPI.update(editingQuestion.id, questionFormData);
-        toast({
-          variant: "success",
-          title: "Question updated",
-          description: "Question has been updated successfully.",
-        });
+
+        // Save scoring configuration for existing question
+        if (scoringConfig.rubricId || scoringConfig.scoringType !== 'manual' || scoringConfig.weight !== 1.0 || Object.keys(scoringConfig.expectedAnswers).length > 0) {
+          try {
+            const scoringPayload = {
+              questionId: editingQuestion.id,
+              rubricId: scoringConfig.rubricId || null,
+              scoringType: scoringConfig.scoringType,
+              weight: scoringConfig.weight,
+              maxScore: scoringConfig.maxScore,
+              expectedAnswers: Object.keys(scoringConfig.expectedAnswers).length > 0 ? scoringConfig.expectedAnswers : null,
+              autoGradeConfig: scoringConfig.autoGradeConfig,
+              fieldScores: scoringConfig.fieldScores,
+            };
+
+            await questionScoringAPI.create(scoringPayload);
+          } catch (scoringErr) {
+            console.error('Error saving scoring config:', scoringErr);
+            scoringError = scoringErr;
+          }
+        }
       } else {
         // Create new question
         const response = await questionAPI.create(questionFormData);
-        newQuestionId = response.data.question.id;
+        questionId = response.data.question.id;
 
         // Automatically add the new question to the activity elements at root level
-        if (id && newQuestionId) {
+        if (id && questionId) {
           try {
             await activityElementAPI.create({
               activityId: id,
               elementType: 'question',
-              questionId: newQuestionId,
+              questionId: questionId,
               title: null,
               description: null,
               orderIndex: elements.length, // Append to the end
@@ -745,10 +892,42 @@ export default function ActivityBuilder() {
           }
         }
 
+        // Save scoring configuration for new question (after question is created)
+        if (scoringConfig.rubricId || scoringConfig.scoringType !== 'manual' || scoringConfig.weight !== 1.0 || Object.keys(scoringConfig.expectedAnswers).length > 0) {
+          try {
+            const scoringPayload = {
+              questionId: questionId,
+              rubricId: scoringConfig.rubricId || null,
+              scoringType: scoringConfig.scoringType,
+              weight: scoringConfig.weight,
+              maxScore: scoringConfig.maxScore,
+              expectedAnswers: Object.keys(scoringConfig.expectedAnswers).length > 0 ? scoringConfig.expectedAnswers : null,
+              autoGradeConfig: scoringConfig.autoGradeConfig,
+              fieldScores: scoringConfig.fieldScores,
+            };
+
+            await questionScoringAPI.create(scoringPayload);
+          } catch (scoringErr) {
+            console.error('Error saving scoring config:', scoringErr);
+            scoringError = scoringErr;
+          }
+        }
+      }
+
+      // Show appropriate toast based on results
+      if (scoringError) {
+        toast({
+          variant: "destructive",
+          title: "Partial Success",
+          description: "Question saved but scoring configuration failed to save. Please try updating the scoring settings separately.",
+        });
+      } else {
         toast({
           variant: "success",
-          title: "Question created",
-          description: "Question has been created and added to the activity.",
+          title: editingQuestion ? "Question updated" : "Question created",
+          description: editingQuestion
+            ? "Question has been updated successfully."
+            : "Question has been created and added to the activity.",
         });
       }
 
@@ -757,7 +936,7 @@ export default function ActivityBuilder() {
       setQuestionEditorOpen(false);
     } catch (err) {
       console.error('Error saving question:', err);
-      const errorMsg = err.response?.data?.error || 'Failed to save question';
+      const errorMsg = err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Failed to save question';
       toast({
         variant: "destructive",
         title: "Error saving question",
@@ -957,101 +1136,418 @@ export default function ActivityBuilder() {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="question-title">Question Title *</Label>
-                <Input
-                  id="question-title"
-                  value={questionFormData.title}
-                  onChange={(e) =>
-                    setQuestionFormData({ ...questionFormData, title: e.target.value })
-                  }
-                  placeholder="Enter question title..."
-                />
-              </div>
+            <CardContent>
+              <Tabs value={questionEditorTab} onValueChange={setQuestionEditorTab}>
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="content">Content</TabsTrigger>
+                  <TabsTrigger value="scoring">
+                    <Target className="h-4 w-4 mr-2" />
+                    Scoring
+                  </TabsTrigger>
+                </TabsList>
 
-              <div className="space-y-2">
-                <Label>Interactive Elements</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => insertInteractiveElement('text-input')}
-                  >
-                    Text Input
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => insertInteractiveElement('textarea')}
-                  >
-                    Text Area
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => insertInteractiveElement('number-input')}
-                  >
-                    Number
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => insertInteractiveElement('radio-group')}
-                  >
-                    Radio Group
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => insertInteractiveElement('checkbox-group')}
-                  >
-                    Checkboxes
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => insertInteractiveElement('select')}
-                  >
-                    Dropdown
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="question-body">Question Body (HTML) *</Label>
-                <textarea
-                  id="question-body"
-                  value={questionFormData.bodyHtml}
-                  onChange={(e) =>
-                    setQuestionFormData({ ...questionFormData, bodyHtml: e.target.value })
-                  }
-                  className="flex min-h-[300px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-                  placeholder="Enter HTML content..."
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Preview</Label>
-                <div className="p-4 border rounded-md bg-muted/30 min-h-[200px] max-h-[400px] overflow-y-auto">
-                  {questionFormData.bodyHtml ? (
-                    <div
-                      className="prose max-w-none"
-                      dangerouslySetInnerHTML={{ __html: questionFormData.bodyHtml }}
+                <TabsContent value="content" className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="question-title">Question Title *</Label>
+                    <Input
+                      id="question-title"
+                      value={questionFormData.title}
+                      onChange={(e) =>
+                        setQuestionFormData({ ...questionFormData, title: e.target.value })
+                      }
+                      placeholder="Enter question title..."
                     />
-                  ) : (
-                    <p className="text-sm text-muted-foreground italic">
-                      Preview will appear here...
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Interactive Elements</Label>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => insertInteractiveElement('text-input')}
+                      >
+                        Text Input
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => insertInteractiveElement('textarea')}
+                      >
+                        Text Area
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => insertInteractiveElement('number-input')}
+                      >
+                        Number
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => insertInteractiveElement('radio-group')}
+                      >
+                        Radio Group
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => insertInteractiveElement('checkbox-group')}
+                      >
+                        Checkboxes
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => insertInteractiveElement('select')}
+                      >
+                        Dropdown
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="question-body">Question Body (HTML) *</Label>
+                    <textarea
+                      id="question-body"
+                      value={questionFormData.bodyHtml}
+                      onChange={(e) =>
+                        setQuestionFormData({ ...questionFormData, bodyHtml: e.target.value })
+                      }
+                      className="flex min-h-[300px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                      placeholder="Enter HTML content..."
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Preview</Label>
+                    <div className="p-4 border rounded-md bg-muted/30 min-h-[200px] max-h-[400px] overflow-y-auto">
+                      {questionFormData.bodyHtml ? (
+                        <div
+                          className="prose max-w-none"
+                          dangerouslySetInnerHTML={{ __html: questionFormData.bodyHtml }}
+                        />
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">
+                          Preview will appear here...
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="scoring" className="space-y-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="rubric-select">Rubric (Optional)</Label>
+                    <Select
+                      value={scoringConfig.rubricId || "none"}
+                      onValueChange={(value) =>
+                        setScoringConfig({ ...scoringConfig, rubricId: value === "none" ? "" : value })
+                      }
+                    >
+                      <SelectTrigger id="rubric-select">
+                        <SelectValue placeholder="Select a rubric..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {rubrics.map((rubric) => (
+                          <SelectItem key={rubric.id} value={rubric.id}>
+                            {rubric.title} ({rubric.rubric_type})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Select a rubric to use for grading this question
                     </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="scoring-type">Scoring Type</Label>
+                    <Select
+                      value={scoringConfig.scoringType}
+                      onValueChange={(value) =>
+                        setScoringConfig({ ...scoringConfig, scoringType: value })
+                      }
+                    >
+                      <SelectTrigger id="scoring-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="manual">Manual Grading</SelectItem>
+                        <SelectItem value="auto">Auto Grading</SelectItem>
+                        <SelectItem value="hybrid">Hybrid (Auto + Manual Review)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {scoringConfig.scoringType === 'manual' && 'Requires instructor to manually grade all submissions'}
+                      {scoringConfig.scoringType === 'auto' && 'Automatically grades based on expected answers'}
+                      {scoringConfig.scoringType === 'hybrid' && 'Auto-grades first, then allows manual adjustment'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="weight">Weight</Label>
+                    <Input
+                      id="weight"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={scoringConfig.weight}
+                      onChange={(e) =>
+                        setScoringConfig({ ...scoringConfig, weight: parseFloat(e.target.value) || 0 })
+                      }
+                      placeholder="1.0"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Relative weight of this question (default: 1.0)
+                    </p>
+                  </div>
+
+                  {(scoringConfig.scoringType === 'auto' || scoringConfig.scoringType === 'hybrid') && (
+                    <div className="space-y-4 pt-4 border-t">
+                      <div>
+                        <Label className="text-base font-semibold">Correct Answers</Label>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Define expected answers for auto-grading
+                        </p>
+                      </div>
+
+                      {/* Auto-grading options */}
+                      <div className="grid grid-cols-2 gap-4 p-3 bg-muted/30 rounded-md">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id="caseSensitive-activity"
+                            checked={scoringConfig.autoGradeConfig?.caseSensitive || false}
+                            onChange={(e) => setScoringConfig({
+                              ...scoringConfig,
+                              autoGradeConfig: {
+                                ...scoringConfig.autoGradeConfig,
+                                caseSensitive: e.target.checked
+                              }
+                            })}
+                            className="h-4 w-4"
+                          />
+                          <Label htmlFor="caseSensitive-activity" className="text-sm cursor-pointer">
+                            Case-sensitive matching
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id="partialMatch-activity"
+                            checked={scoringConfig.autoGradeConfig?.partialMatch || false}
+                            onChange={(e) => setScoringConfig({
+                              ...scoringConfig,
+                              autoGradeConfig: {
+                                ...scoringConfig.autoGradeConfig,
+                                partialMatch: e.target.checked
+                              }
+                            })}
+                            className="h-4 w-4"
+                          />
+                          <Label htmlFor="partialMatch-activity" className="text-sm cursor-pointer">
+                            Allow partial matches
+                          </Label>
+                        </div>
+                      </div>
+
+                      {/* Interactive elements answers */}
+                      {interactiveElements.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground bg-muted/30 rounded-md">
+                          No interactive elements detected in question body. Add text inputs, radio buttons, or checkboxes to configure correct answers.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {interactiveElements.map((element) => (
+                            <div key={element.uuid} className="p-3 border rounded-md space-y-2">
+                              <div className="flex items-center justify-between">
+                                <Label className="font-medium">{element.label}</Label>
+                                <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
+                                  {element.type}
+                                </span>
+                              </div>
+                              
+                              {element.type === 'radio-group' ? (
+                                <div className="space-y-2">
+                                  <p className="text-sm text-muted-foreground">Select the correct option:</p>
+                                  {element.options.map((option) => (
+                                    <div key={option.uuid} className="flex items-center space-x-2">
+                                      <input
+                                        type="radio"
+                                        id={`activity-answer-${option.uuid}`}
+                                        name={`activity-answer-${element.uuid}`}
+                                        value={option.value}
+                                        checked={scoringConfig.expectedAnswers[element.uuid] === option.value}
+                                        onChange={(e) => setScoringConfig({
+                                          ...scoringConfig,
+                                          expectedAnswers: {
+                                            ...scoringConfig.expectedAnswers,
+                                            [element.uuid]: e.target.value
+                                          }
+                                        })}
+                                        className="h-4 w-4"
+                                      />
+                                      <Label htmlFor={`activity-answer-${option.uuid}`} className="text-sm cursor-pointer">
+                                        {option.label} <span className="text-muted-foreground">({option.value})</span>
+                                      </Label>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : element.type === 'checkbox' ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      id={`activity-answer-${element.uuid}`}
+                                      checked={scoringConfig.expectedAnswers[element.uuid] === element.value}
+                                      onChange={(e) => setScoringConfig({
+                                        ...scoringConfig,
+                                        expectedAnswers: {
+                                          ...scoringConfig.expectedAnswers,
+                                          [element.uuid]: e.target.checked ? element.value : ''
+                                        }
+                                      })}
+                                      className="h-4 w-4"
+                                    />
+                                    <Label htmlFor={`activity-answer-${element.uuid}`} className="text-sm cursor-pointer">
+                                      This should be checked <span className="text-muted-foreground">(value: {element.value})</span>
+                                    </Label>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    The checkbox will be marked correct if checked with value: {element.value}
+                                  </p>
+                                </div>
+                              ) : element.inputType === 'number' ? (
+                                <Input
+                                  type="number"
+                                  value={scoringConfig.expectedAnswers[element.uuid] || ''}
+                                  onChange={(e) => setScoringConfig({
+                                    ...scoringConfig,
+                                    expectedAnswers: {
+                                      ...scoringConfig.expectedAnswers,
+                                      [element.uuid]: e.target.value
+                                    }
+                                  })}
+                                  placeholder="Enter the correct number"
+                                  className="text-sm"
+                                />
+                              ) : (
+                                <Input
+                                  value={scoringConfig.expectedAnswers[element.uuid] || ''}
+                                  onChange={(e) => setScoringConfig({
+                                    ...scoringConfig,
+                                    expectedAnswers: {
+                                      ...scoringConfig.expectedAnswers,
+                                      [element.uuid]: e.target.value
+                                    }
+                                  })}
+                                  placeholder="Enter the correct answer"
+                                  className="text-sm"
+                                />
+                              )}
+                              
+                              {/* Field Scoring Configuration */}
+                              <div className="grid grid-cols-2 gap-3 pt-2 border-t">
+                                <div className="space-y-1">
+                                  <Label htmlFor={`points-activity-${element.uuid}`} className="text-xs">
+                                    Points (correct)
+                                  </Label>
+                                  <Input
+                                    id={`points-activity-${element.uuid}`}
+                                    type="number"
+                                    min="0"
+                                    step="0.5"
+                                    value={scoringConfig.fieldScores[element.uuid]?.points || ''}
+                                    onChange={(e) => setScoringConfig({
+                                      ...scoringConfig,
+                                      fieldScores: {
+                                        ...scoringConfig.fieldScores,
+                                        [element.uuid]: {
+                                          ...scoringConfig.fieldScores[element.uuid],
+                                          points: parseFloat(e.target.value) || 0
+                                        }
+                                      }
+                                    })}
+                                    placeholder="e.g., 5"
+                                    className="text-sm h-8"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor={`penalty-activity-${element.uuid}`} className="text-xs">
+                                    Wrong Penalty
+                                  </Label>
+                                  <Input
+                                    id={`penalty-activity-${element.uuid}`}
+                                    type="number"
+                                    max="0"
+                                    step="0.5"
+                                    value={scoringConfig.fieldScores[element.uuid]?.wrongPenalty || ''}
+                                    onChange={(e) => setScoringConfig({
+                                      ...scoringConfig,
+                                      fieldScores: {
+                                        ...scoringConfig.fieldScores,
+                                        [element.uuid]: {
+                                          ...scoringConfig.fieldScores[element.uuid],
+                                          wrongPenalty: parseFloat(e.target.value) || 0
+                                        }
+                                      }
+                                    })}
+                                    placeholder="e.g., -1"
+                                    className="text-sm h-8"
+                                  />
+                                </div>
+                              </div>
+                              
+                              <p className="text-xs text-muted-foreground">
+                                UUID: {element.uuid}
+                              </p>
+                            </div>
+                          ))}
+                          
+                          {/* Total Score Display */}
+                          <div className="p-3 bg-primary/5 border-2 border-primary/20 rounded-md">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold">Calculated Total:</span>
+                              <span className="text-lg font-bold text-primary">
+                                {Object.values(scoringConfig.fieldScores).reduce((sum, field) => sum + (field?.points || 0), 0).toFixed(1)} points
+                              </span>
+                            </div>
+                            {scoringConfig.maxScore && Math.abs(Object.values(scoringConfig.fieldScores).reduce((sum, field) => sum + (field?.points || 0), 0) - scoringConfig.maxScore) > 0.01 && (
+                              <p className="text-xs text-amber-600 mt-1">
+                                ⚠️ Field scores ({Object.values(scoringConfig.fieldScores).reduce((sum, field) => sum + (field?.points || 0), 0).toFixed(1)}) 
+                                don't match max score ({scoringConfig.maxScore})
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
-                </div>
-              </div>
+
+                  {scoringConfig.rubricId && (
+                    <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+                      <div className="flex items-start gap-2">
+                        <Award className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                        <div className="text-sm">
+                          <p className="font-medium text-blue-900 dark:text-blue-100">Rubric Selected</p>
+                          <p className="text-blue-700 dark:text-blue-300">
+                            {rubrics.find(r => r.id === scoringConfig.rubricId)?.title}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
 
               <div className="flex gap-2 pt-4">
                 <Button onClick={handleSaveQuestion} className="flex-1">

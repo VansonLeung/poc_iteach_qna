@@ -53,6 +53,20 @@ const QuestionScoring = sequelize.define('QuestionScoring', {
       this.setDataValue('auto_grade_config', value ? JSON.stringify(value) : null);
     },
   },
+  field_scores: {
+    type: DataTypes.TEXT,
+    get() {
+      const rawValue = this.getDataValue('field_scores');
+      return rawValue ? JSON.parse(rawValue) : null;
+    },
+    set(value) {
+      this.setDataValue('field_scores', value ? JSON.stringify(value) : null);
+    },
+  },
+  max_score: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
   created_at: {
     type: DataTypes.DATE,
     allowNull: false,

@@ -1,21 +1,38 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { questionAPI } from '@/lib/api';
+import { questionAPI, rubricAPI, questionScoringAPI } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ChevronLeft, Save } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ChevronLeft, Save, Award } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export default function QuestionBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [formData, setFormData] = useState({
     title: '',
     bodyHtml: '',
     parentQuestionId: null,
     tags: [],
   });
+  const [scoringData, setScoringData] = useState({
+    rubricId: '',
+    scoringType: 'manual',
+    weight: 1,
+    maxScore: 10,
+    expectedAnswers: {},
+    autoGradeConfig: {
+      caseSensitive: false,
+      partialMatch: false,
+    },
+    fieldScores: {}, // { uuid: { points: 5, wrongPenalty: -1 } }
+  });
+  const [interactiveElements, setInteractiveElements] = useState([]);
+  const [rubrics, setRubrics] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -23,10 +40,21 @@ export default function QuestionBuilder() {
   const isEditMode = !!id;
 
   useEffect(() => {
+    fetchRubrics();
     if (isEditMode) {
       fetchQuestion();
+      fetchQuestionScoring();
     }
   }, [id]);
+
+  const fetchRubrics = async () => {
+    try {
+      const response = await rubricAPI.getAll({ status: 'active', limit: 100 });
+      setRubrics(response.data.rubrics || []);
+    } catch (error) {
+      console.error('Error fetching rubrics:', error);
+    }
+  };
 
   const fetchQuestion = async () => {
     try {
@@ -44,20 +72,177 @@ export default function QuestionBuilder() {
     }
   };
 
+  const fetchQuestionScoring = async () => {
+    try {
+      const response = await questionScoringAPI.get(id);
+      if (response.data.scoring) {
+        const scoring = response.data.scoring;
+        setScoringData({
+          rubricId: scoring.rubric_id || '',
+          scoringType: scoring.scoring_type || 'manual',
+          weight: scoring.weight || 1,
+          maxScore: scoring.max_score || 10,
+          expectedAnswers: scoring.expected_answers || {},
+          autoGradeConfig: scoring.auto_grade_config || {
+            caseSensitive: false,
+            partialMatch: false,
+          },
+          fieldScores: scoring.field_scores || {},
+        });
+      }
+    } catch (error) {
+      // It's OK if no scoring exists yet
+      console.log('No scoring config found for this question');
+    }
+  };
+
+  // Parse interactive elements from HTML
+  const parseInteractiveElements = (html) => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const elements = [];
+
+    // Find all elements with data-element-uuid
+    const interactiveNodes = doc.querySelectorAll('[data-element-uuid]');
+    
+    interactiveNodes.forEach((node) => {
+      const uuid = node.getAttribute('data-element-uuid');
+      const type = node.getAttribute('data-element-type');
+      const label = node.getAttribute('data-element-label') || 
+                   node.closest('.form-group')?.querySelector('label')?.textContent?.trim() ||
+                   'Unlabeled element';
+      
+      // Check if this UUID already exists
+      if (!elements.find(el => el.uuid === uuid)) {
+        const element = {
+          uuid,
+          type: type || node.tagName.toLowerCase(),
+          label,
+          inputType: node.type || 'text',
+        };
+
+        // For radio and checkbox, extract the value and create option info
+        if (type === 'radio' || type === 'checkbox') {
+          element.value = node.value || node.getAttribute('value') || '';
+          element.optionLabel = label;
+          
+          // Try to find the group name for radio buttons
+          if (type === 'radio') {
+            element.groupName = node.name || node.getAttribute('name') || '';
+          }
+        }
+
+        elements.push(element);
+      }
+    });
+
+    // Group radio buttons by name and checkboxes by proximity
+    const groupedElements = [];
+    const radioGroups = {};
+    const processedUuids = new Set();
+
+    elements.forEach((el) => {
+      if (processedUuids.has(el.uuid)) return;
+
+      if (el.type === 'radio' && el.groupName) {
+        if (!radioGroups[el.groupName]) {
+          radioGroups[el.groupName] = {
+            uuid: `radio-group-${el.groupName}`,
+            type: 'radio-group',
+            label: el.label.replace(/Option \d+/i, '').trim() || 'Radio Group',
+            groupName: el.groupName,
+            options: []
+          };
+        }
+        radioGroups[el.groupName].options.push({
+          uuid: el.uuid,
+          value: el.value,
+          label: el.optionLabel
+        });
+        processedUuids.add(el.uuid);
+      } else {
+        groupedElements.push(el);
+      }
+    });
+
+    // Add radio groups
+    Object.values(radioGroups).forEach(group => {
+      groupedElements.push(group);
+    });
+
+    return groupedElements;
+  };
+
+  // Update interactive elements when bodyHtml changes
+  useEffect(() => {
+    if (formData.bodyHtml) {
+      const elements = parseInteractiveElements(formData.bodyHtml);
+      setInteractiveElements(elements);
+    } else {
+      setInteractiveElements([]);
+    }
+  }, [formData.bodyHtml]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
+      let questionId = id;
+      
       if (isEditMode) {
         await questionAPI.update(id, formData);
+        toast({
+          title: "Question updated",
+          description: "Question has been updated successfully.",
+        });
       } else {
-        await questionAPI.create(formData);
+        const response = await questionAPI.create(formData);
+        questionId = response.data.question.id;
+        toast({
+          title: "Question created",
+          description: "Question has been created successfully.",
+        });
       }
+
+      // Save or update scoring configuration if rubric is selected or answers configured
+      if (scoringData.rubricId || scoringData.scoringType !== 'manual' || Object.keys(scoringData.expectedAnswers).length > 0) {
+        const scoringPayload = {
+          questionId,
+          rubricId: scoringData.rubricId || null,
+          scoringType: scoringData.scoringType,
+          weight: parseFloat(scoringData.weight),
+          maxScore: parseFloat(scoringData.maxScore),
+          expectedAnswers: scoringData.expectedAnswers,
+          autoGradeConfig: scoringData.autoGradeConfig,
+          fieldScores: scoringData.fieldScores,
+        };
+
+        try {
+          if (isEditMode) {
+            await questionScoringAPI.update(questionId, scoringPayload);
+          } else {
+            await questionScoringAPI.create(scoringPayload);
+          }
+        } catch (scoringError) {
+          console.error('Error saving scoring config:', scoringError);
+          toast({
+            variant: "destructive",
+            title: "Warning",
+            description: "Question saved but scoring configuration failed.",
+          });
+        }
+      }
+
       navigate('/admin/questions');
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to save question');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err.response?.data?.error || 'Failed to save question',
+      });
     } finally {
       setLoading(false);
     }
@@ -262,6 +447,334 @@ export default function QuestionBuilder() {
                   ))}
                 </div>
               </div>
+
+              {/* Scoring & Rubric Configuration */}
+              <Card className="border-primary/20">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Award className="h-5 w-5 text-primary" />
+                    <CardTitle className="text-lg">Scoring Configuration</CardTitle>
+                  </div>
+                  <CardDescription>
+                    Assign a rubric and configure scoring settings for this question
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="rubric">Rubric (Optional)</Label>
+                      <Select
+                        value={scoringData.rubricId || "none"}
+                        onValueChange={(value) => setScoringData({ ...scoringData, rubricId: value === "none" ? "" : value })}
+                        disabled={loading}
+                      >
+                        <SelectTrigger id="rubric">
+                          <SelectValue placeholder="Select a rubric..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {rubrics.map((rubric) => (
+                            <SelectItem key={rubric.id} value={rubric.id}>
+                              {rubric.title} ({rubric.rubric_type})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {rubrics.length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          No rubrics available. <a href="/admin/rubrics/new" className="text-primary hover:underline">Create one</a>
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="scoringType">Scoring Type</Label>
+                      <Select
+                        value={scoringData.scoringType}
+                        onValueChange={(value) => setScoringData({ ...scoringData, scoringType: value })}
+                        disabled={loading}
+                      >
+                        <SelectTrigger id="scoringType">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="manual">Manual Grading</SelectItem>
+                          <SelectItem value="auto">Auto Grading</SelectItem>
+                          <SelectItem value="hybrid">Hybrid (Auto + Manual)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="maxScore">Max Score</Label>
+                      <Input
+                        id="maxScore"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={scoringData.maxScore}
+                        onChange={(e) => setScoringData({ ...scoringData, maxScore: e.target.value })}
+                        disabled={loading}
+                        placeholder="10"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="weight">Weight</Label>
+                      <Input
+                        id="weight"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={scoringData.weight}
+                        onChange={(e) => setScoringData({ ...scoringData, weight: e.target.value })}
+                        disabled={loading}
+                        placeholder="1.0"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Used for weighted scoring in activities
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Correct Answers Configuration */}
+                  {(scoringData.scoringType === 'auto' || scoringData.scoringType === 'hybrid') && (
+                    <div className="space-y-4 pt-4 border-t">
+                      <div>
+                        <Label className="text-base font-semibold">Correct Answers</Label>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Define expected answers for auto-grading
+                        </p>
+                      </div>
+
+                      {/* Auto-grading options */}
+                      <div className="grid grid-cols-2 gap-4 p-3 bg-muted/30 rounded-md">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id="caseSensitive"
+                            checked={scoringData.autoGradeConfig.caseSensitive}
+                            onChange={(e) => setScoringData({
+                              ...scoringData,
+                              autoGradeConfig: {
+                                ...scoringData.autoGradeConfig,
+                                caseSensitive: e.target.checked
+                              }
+                            })}
+                            className="h-4 w-4"
+                          />
+                          <Label htmlFor="caseSensitive" className="text-sm cursor-pointer">
+                            Case-sensitive matching
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id="partialMatch"
+                            checked={scoringData.autoGradeConfig.partialMatch}
+                            onChange={(e) => setScoringData({
+                              ...scoringData,
+                              autoGradeConfig: {
+                                ...scoringData.autoGradeConfig,
+                                partialMatch: e.target.checked
+                              }
+                            })}
+                            className="h-4 w-4"
+                          />
+                          <Label htmlFor="partialMatch" className="text-sm cursor-pointer">
+                            Allow partial matches
+                          </Label>
+                        </div>
+                      </div>
+
+                      {/* Interactive elements answers */}
+                      {interactiveElements.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground bg-muted/30 rounded-md">
+                          No interactive elements detected in question body. Add text inputs, radio buttons, or checkboxes to configure correct answers.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {interactiveElements.map((element) => (
+                            <div key={element.uuid} className="p-3 border rounded-md space-y-2">
+                              <div className="flex items-center justify-between">
+                                <Label className="font-medium">{element.label}</Label>
+                                <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
+                                  {element.type}
+                                </span>
+                              </div>
+                              
+                              {element.type === 'radio-group' ? (
+                                <div className="space-y-2">
+                                  <p className="text-sm text-muted-foreground">Select the correct option:</p>
+                                  {element.options.map((option) => (
+                                    <div key={option.uuid} className="flex items-center space-x-2">
+                                      <input
+                                        type="radio"
+                                        id={`answer-${option.uuid}`}
+                                        name={`answer-${element.uuid}`}
+                                        value={option.value}
+                                        checked={scoringData.expectedAnswers[element.uuid] === option.value}
+                                        onChange={(e) => setScoringData({
+                                          ...scoringData,
+                                          expectedAnswers: {
+                                            ...scoringData.expectedAnswers,
+                                            [element.uuid]: e.target.value
+                                          }
+                                        })}
+                                        className="h-4 w-4"
+                                      />
+                                      <Label htmlFor={`answer-${option.uuid}`} className="text-sm cursor-pointer">
+                                        {option.label} <span className="text-muted-foreground">({option.value})</span>
+                                      </Label>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : element.type === 'checkbox' ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      id={`answer-${element.uuid}`}
+                                      checked={scoringData.expectedAnswers[element.uuid] === element.value}
+                                      onChange={(e) => setScoringData({
+                                        ...scoringData,
+                                        expectedAnswers: {
+                                          ...scoringData.expectedAnswers,
+                                          [element.uuid]: e.target.checked ? element.value : ''
+                                        }
+                                      })}
+                                      className="h-4 w-4"
+                                    />
+                                    <Label htmlFor={`answer-${element.uuid}`} className="text-sm cursor-pointer">
+                                      This should be checked <span className="text-muted-foreground">(value: {element.value})</span>
+                                    </Label>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">
+                                    The checkbox will be marked correct if checked with value: {element.value}
+                                  </p>
+                                </div>
+                              ) : element.inputType === 'number' ? (
+                                <Input
+                                  type="number"
+                                  value={scoringData.expectedAnswers[element.uuid] || ''}
+                                  onChange={(e) => setScoringData({
+                                    ...scoringData,
+                                    expectedAnswers: {
+                                      ...scoringData.expectedAnswers,
+                                      [element.uuid]: e.target.value
+                                    }
+                                  })}
+                                  placeholder="Enter the correct number"
+                                  className="text-sm"
+                                />
+                              ) : (
+                                <Input
+                                  value={scoringData.expectedAnswers[element.uuid] || ''}
+                                  onChange={(e) => setScoringData({
+                                    ...scoringData,
+                                    expectedAnswers: {
+                                      ...scoringData.expectedAnswers,
+                                      [element.uuid]: e.target.value
+                                    }
+                                  })}
+                                  placeholder="Enter the correct answer"
+                                  className="text-sm"
+                                />
+                              )}
+                              
+                              {/* Field Scoring Configuration */}
+                              <div className="grid grid-cols-2 gap-3 pt-2 border-t">
+                                <div className="space-y-1">
+                                  <Label htmlFor={`points-${element.uuid}`} className="text-xs">
+                                    Points (correct)
+                                  </Label>
+                                  <Input
+                                    id={`points-${element.uuid}`}
+                                    type="number"
+                                    min="0"
+                                    step="0.5"
+                                    value={scoringData.fieldScores[element.uuid]?.points || ''}
+                                    onChange={(e) => setScoringData({
+                                      ...scoringData,
+                                      fieldScores: {
+                                        ...scoringData.fieldScores,
+                                        [element.uuid]: {
+                                          ...scoringData.fieldScores[element.uuid],
+                                          points: parseFloat(e.target.value) || 0
+                                        }
+                                      }
+                                    })}
+                                    placeholder="e.g., 5"
+                                    className="text-sm h-8"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label htmlFor={`penalty-${element.uuid}`} className="text-xs">
+                                    Wrong Penalty
+                                  </Label>
+                                  <Input
+                                    id={`penalty-${element.uuid}`}
+                                    type="number"
+                                    max="0"
+                                    step="0.5"
+                                    value={scoringData.fieldScores[element.uuid]?.wrongPenalty || ''}
+                                    onChange={(e) => setScoringData({
+                                      ...scoringData,
+                                      fieldScores: {
+                                        ...scoringData.fieldScores,
+                                        [element.uuid]: {
+                                          ...scoringData.fieldScores[element.uuid],
+                                          wrongPenalty: parseFloat(e.target.value) || 0
+                                        }
+                                      }
+                                    })}
+                                    placeholder="e.g., -1"
+                                    className="text-sm h-8"
+                                  />
+                                </div>
+                              </div>
+                              
+                              <p className="text-xs text-muted-foreground">
+                                UUID: {element.uuid}
+                              </p>
+                            </div>
+                          ))}
+                          
+                          {/* Total Score Display */}
+                          <div className="p-3 bg-primary/5 border-2 border-primary/20 rounded-md">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold">Calculated Total:</span>
+                              <span className="text-lg font-bold text-primary">
+                                {Object.values(scoringData.fieldScores).reduce((sum, field) => sum + (field?.points || 0), 0).toFixed(1)} points
+                              </span>
+                            </div>
+                            {scoringData.maxScore && Math.abs(Object.values(scoringData.fieldScores).reduce((sum, field) => sum + (field?.points || 0), 0) - scoringData.maxScore) > 0.01 && (
+                              <p className="text-xs text-amber-600 mt-1">
+                                ⚠️ Field scores ({Object.values(scoringData.fieldScores).reduce((sum, field) => sum + (field?.points || 0), 0).toFixed(1)}) 
+                                don't match max score ({scoringData.maxScore})
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {scoringData.rubricId && rubrics.find(r => r.id === scoringData.rubricId) && (
+                    <div className="p-3 bg-muted/50 rounded-md border">
+                      <p className="text-sm font-medium mb-1">Selected Rubric:</p>
+                      <p className="text-sm text-muted-foreground">
+                        {rubrics.find(r => r.id === scoringData.rubricId)?.title}
+                      </p>
+                      {rubrics.find(r => r.id === scoringData.rubricId)?.description && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {rubrics.find(r => r.id === scoringData.rubricId)?.description}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               <div className="flex justify-end space-x-2">
                 <Button

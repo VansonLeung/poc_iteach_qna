@@ -10,6 +10,8 @@ import ActivityList from './pages/Admin/ActivityList';
 import ActivityBuilder from './pages/Admin/ActivityBuilder';
 import QuestionBuilder from './pages/Admin/QuestionBuilder';
 import QuestionLibrary from './pages/Admin/QuestionLibrary';
+import RubricList from './pages/Admin/RubricList';
+import RubricBuilder from './pages/Admin/RubricBuilder';
 
 // User Pages
 import Dashboard from './pages/User/Dashboard';
@@ -78,6 +80,30 @@ function App() {
             element={
               <ProtectedRoute roles={['admin', 'teacher']}>
                 <QuestionBuilder />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/rubrics"
+            element={
+              <ProtectedRoute roles={['admin', 'teacher']}>
+                <RubricList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/rubrics/new"
+            element={
+              <ProtectedRoute roles={['admin', 'teacher']}>
+                <RubricBuilder />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/rubrics/:id/edit"
+            element={
+              <ProtectedRoute roles={['admin', 'teacher']}>
+                <RubricBuilder />
               </ProtectedRoute>
             }
           />

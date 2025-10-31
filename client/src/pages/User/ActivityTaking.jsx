@@ -1,19 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { activityAPI, activityElementAPI, submissionAPI, submissionAnswerAPI } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Save } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export default function ActivityTaking() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [activity, setActivity] = useState(null);
   const [elements, setElements] = useState([]);
   const [submission, setSubmission] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [savedAnswerIds, setSavedAnswerIds] = useState({});
   const [currentElementIndex, setCurrentElementIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const questionBodyRef = useRef(null);
 
   useEffect(() => {
     fetchActivity();
@@ -37,10 +42,13 @@ export default function ActivityTaking() {
         // Load existing answers
         const answersRes = await submissionAnswerAPI.getAll({ submissionId: sub.id });
         const answersMap = {};
+        const answerIdsMap = {};
         answersRes.data.answers?.forEach(ans => {
           answersMap[ans.element_uuid] = ans.answer_data;
+          answerIdsMap[ans.element_uuid] = ans.id;
         });
         setAnswers(answersMap);
+        setSavedAnswerIds(answerIdsMap);
       } else {
         const newSub = await submissionAPI.create({ activityId: id });
         setSubmission(newSub.data.submission);
@@ -65,33 +73,132 @@ export default function ActivityTaking() {
     return flattened;
   };
 
-  const handleAnswerChange = async (elementUuid, value) => {
-    setAnswers(prev => ({ ...prev, [elementUuid]: value }));
+  // Attach event listeners to interactive elements after rendering
+  useEffect(() => {
+    if (!questionBodyRef.current || !submission) return;
 
-    // Auto-save answer
-    if (submission) {
-      try {
-        const currentElement = elements[currentElementIndex];
-        const existingAnswer = await submissionAnswerAPI.getAll({
-          submissionId: submission.id,
-          questionId: currentElement.question_id
-        });
+    const container = questionBodyRef.current;
+    const inputs = container.querySelectorAll('[data-answer-field]');
 
-        if (existingAnswer.data.answers?.length > 0) {
-          await submissionAnswerAPI.update(existingAnswer.data.answers[0].id, {
-            answerData: { value }
+    const handleInputChange = (e) => {
+      const element = e.target;
+      const fieldName = element.closest('[data-answer-field]')?.getAttribute('data-answer-field');
+
+      if (!fieldName) return;
+
+      let value;
+      if (element.type === 'checkbox') {
+        // For checkboxes, collect all checked values
+        const container = element.closest('[data-answer-field]');
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+        value = Array.from(checkboxes)
+          .filter(cb => cb.checked)
+          .map(cb => cb.value);
+      } else if (element.type === 'radio') {
+        value = element.value;
+      } else {
+        value = element.value;
+      }
+
+      setAnswers(prev => ({ ...prev, [fieldName]: value }));
+    };
+
+    inputs.forEach(input => {
+      const innerInputs = input.querySelectorAll('input, textarea, select');
+      innerInputs.forEach(innerInput => {
+        innerInput.addEventListener('change', handleInputChange);
+        innerInput.addEventListener('input', handleInputChange);
+      });
+    });
+
+    // Restore saved answers
+    inputs.forEach(input => {
+      const fieldName = input.getAttribute('data-answer-field');
+      if (fieldName && answers[fieldName] !== undefined) {
+        const savedValue = answers[fieldName];
+        const inputType = input.getAttribute('data-input-type');
+
+        if (inputType === 'checkbox') {
+          const checkboxes = input.querySelectorAll('input[type="checkbox"]');
+          checkboxes.forEach(cb => {
+            cb.checked = Array.isArray(savedValue) && savedValue.includes(cb.value);
+          });
+        } else if (inputType === 'radio') {
+          const radios = input.querySelectorAll('input[type="radio"]');
+          radios.forEach(radio => {
+            radio.checked = radio.value === savedValue;
           });
         } else {
-          await submissionAnswerAPI.create({
-            submissionId: submission.id,
-            questionId: currentElement.question_id,
-            elementUuid,
-            answerData: { value }
-          });
+          const innerInput = input.querySelector('input, textarea, select');
+          if (innerInput) {
+            innerInput.value = savedValue;
+          }
         }
-      } catch (error) {
-        console.error('Error saving answer:', error);
       }
+    });
+
+    return () => {
+      inputs.forEach(input => {
+        const innerInputs = input.querySelectorAll('input, textarea, select');
+        innerInputs.forEach(innerInput => {
+          innerInput.removeEventListener('change', handleInputChange);
+          innerInput.removeEventListener('input', handleInputChange);
+        });
+      });
+    };
+  }, [currentElementIndex, elements, submission, answers]);
+
+  const saveAnswers = async () => {
+    if (!submission) return;
+
+    setSaving(true);
+    try {
+      const currentElement = elements[currentElementIndex];
+
+      // Save each answer
+      for (const [elementUuid, answerValue] of Object.entries(answers)) {
+        try {
+          const answerData = { value: answerValue };
+          const existingAnswerId = savedAnswerIds[elementUuid];
+
+          if (existingAnswerId) {
+            // Update existing answer
+            await submissionAnswerAPI.update(existingAnswerId, {
+              answerData: JSON.stringify(answerData)
+            });
+          } else {
+            // Create new answer
+            const response = await submissionAnswerAPI.create({
+              submissionId: submission.id,
+              questionId: currentElement.question_id,
+              elementUuid,
+              answerData: JSON.stringify(answerData)
+            });
+            // Track the new answer ID
+            setSavedAnswerIds(prev => ({
+              ...prev,
+              [elementUuid]: response.data.answer.id
+            }));
+          }
+        } catch (error) {
+          console.error(`Error saving answer for ${elementUuid}:`, error);
+        }
+      }
+
+      toast({
+        variant: "success",
+        title: "Progress saved",
+        description: "Your answers have been saved successfully.",
+      });
+    } catch (error) {
+      console.error('Error saving answers:', error);
+      toast({
+        variant: "destructive",
+        title: "Error saving answers",
+        description: "Failed to save your answers. Please try again.",
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -99,10 +206,26 @@ export default function ActivityTaking() {
     if (!submission) return;
 
     try {
+      // Save answers first
+      await saveAnswers();
+
+      // Then submit
       await submissionAPI.update(submission.id, { status: 'submitted' });
+
+      toast({
+        variant: "success",
+        title: "Activity submitted",
+        description: "Your activity has been submitted successfully.",
+      });
+
       navigate('/submissions');
     } catch (error) {
       console.error('Error submitting:', error);
+      toast({
+        variant: "destructive",
+        title: "Error submitting activity",
+        description: "Failed to submit your activity. Please try again.",
+      });
     }
   };
 
@@ -169,17 +292,26 @@ export default function ActivityTaking() {
       {/* Question Card */}
       <Card>
         <CardHeader>
-          <CardTitle>{currentElement.question_title}</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>{currentElement.question_title}</CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={saveAnswers}
+              disabled={saving}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {saving ? 'Saving...' : 'Save Progress'}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          {/* Render HTML body */}
+          {/* Render HTML body with interactive elements */}
           <div
+            ref={questionBodyRef}
             className="prose max-w-none mb-6"
             dangerouslySetInnerHTML={{ __html: currentElement.body_html }}
           />
-
-          {/* Interactive elements would be rendered here */}
-          {/* This is simplified - in production you'd parse the HTML and replace elements */}
         </CardContent>
       </Card>
 

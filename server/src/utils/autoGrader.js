@@ -275,7 +275,7 @@ const gradeEssay = (studentAnswer, expectedCriteria, config = {}) => {
  * @returns {Object} Grading result with score, feedback, and details
  */
 export const gradeResponse = (questionResponse, scoringConfig) => {
-  const { expectedAnswers, autoGradeConfig = {} } = scoringConfig;
+  const { expectedAnswers, autoGradeConfig = {}, fieldScores = {} } = scoringConfig;
 
   if (!expectedAnswers) {
     return {
@@ -287,20 +287,31 @@ export const gradeResponse = (questionResponse, scoringConfig) => {
   const results = {};
   let totalScore = 0;
   let totalMaxScore = 0;
+  
+  // Check if we're using per-field scoring
+  const useFieldScoring = Object.keys(fieldScores).length > 0;
 
   // Grade each answer field
   for (const [fieldName, expectedAnswer] of Object.entries(expectedAnswers)) {
     const studentAnswer = questionResponse[fieldName];
+    const fieldConfig = fieldScores[fieldName] || { points: 1, wrongPenalty: 0 };
+    const fieldPoints = fieldConfig.points || 1;
+    const wrongPenalty = fieldConfig.wrongPenalty || 0;
 
-    if (studentAnswer === undefined) {
+    // Check if answer is blank/missing
+    const isBlank = studentAnswer === undefined || studentAnswer === null || studentAnswer === '';
+
+    if (isBlank) {
+      const penaltyScore = Math.max(0, wrongPenalty); // Apply blank penalty (same as wrong per spec)
       results[fieldName] = {
         correct: false,
-        score: 0,
-        maxScore: 1,
+        score: penaltyScore,
+        maxScore: fieldPoints,
         feedback: 'No answer provided',
-        details: { missing: true }
+        details: { missing: true, penaltyApplied: wrongPenalty }
       };
-      totalMaxScore += 1;
+      totalScore += penaltyScore;
+      totalMaxScore += fieldPoints;
       continue;
     }
 
@@ -332,10 +343,32 @@ export const gradeResponse = (questionResponse, scoringConfig) => {
       result = gradeTextInput(studentAnswer, expectedAnswer, autoGradeConfig);
     }
 
+    // Apply field-based scoring if configured
+    if (useFieldScoring) {
+      if (result.correct) {
+        // Award field points for correct answer
+        result.score = fieldPoints;
+        result.maxScore = fieldPoints;
+      } else {
+        // Apply wrong penalty (negative points)
+        result.score = Math.max(0, wrongPenalty); // Penalty is negative, so this gives 0 or positive small value
+        result.maxScore = fieldPoints;
+        result.details = {
+          ...result.details,
+          penaltyApplied: wrongPenalty,
+          earnedPoints: wrongPenalty
+        };
+        result.feedback = `${result.feedback} (Penalty: ${wrongPenalty} points)`;
+      }
+    }
+
     results[fieldName] = result;
     totalScore += result.score;
     totalMaxScore += result.maxScore;
   }
+
+  // Floor total score at 0 (cannot go negative)
+  totalScore = Math.max(0, totalScore);
 
   const allCorrect = Object.values(results).every(r => r.correct);
 
@@ -347,7 +380,8 @@ export const gradeResponse = (questionResponse, scoringConfig) => {
     percentage: totalMaxScore > 0 ? (totalScore / totalMaxScore) * 100 : 0,
     fieldResults: results,
     feedback: allCorrect ? 'All answers correct!' : 'Some answers need review',
-    gradedAt: new Date().toISOString()
+    gradedAt: new Date().toISOString(),
+    scoringMethod: useFieldScoring ? 'field-based' : 'standard'
   };
 };
 

@@ -8,6 +8,7 @@ import {
   History,
   LogOut,
   Settings,
+  Award,
 } from 'lucide-react';
 
 export default function Layout() {
@@ -63,6 +64,12 @@ export default function Layout() {
                   <Button variant="ghost" className="w-full justify-start">
                     <FileQuestion className="mr-2 h-4 w-4" />
                     Questions
+                  </Button>
+                </Link>
+                <Link to="/admin/rubrics">
+                  <Button variant="ghost" className="w-full justify-start">
+                    <Award className="mr-2 h-4 w-4" />
+                    Rubrics
                   </Button>
                 </Link>
               </>

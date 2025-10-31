@@ -19,8 +19,10 @@ router.post(
     body('rubricId').optional().isUUID(),
     body('scoringType').isIn(['auto', 'manual', 'hybrid']).withMessage('Invalid scoring type'),
     body('weight').optional().isFloat({ min: 0 }).withMessage('Weight must be a positive number'),
+    body('maxScore').optional().isFloat({ min: 0 }).withMessage('Max score must be a positive number'),
     body('expectedAnswers').optional(),
     body('autoGradeConfig').optional(),
+    body('fieldScores').optional().isObject().withMessage('Field scores must be an object'),
   ],
   async (req, res, next) => {
     try {
@@ -29,7 +31,7 @@ router.post(
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { questionId, rubricId, scoringType, weight, expectedAnswers, autoGradeConfig } = req.body;
+      const { questionId, rubricId, scoringType, weight, maxScore, expectedAnswers, autoGradeConfig, fieldScores } = req.body;
 
       // Validate question exists
       const question = await Question.findByPk(questionId);
@@ -53,8 +55,10 @@ router.post(
         scoring.rubric_id = rubricId || scoring.rubric_id;
         scoring.scoring_type = scoringType;
         if (weight !== undefined) scoring.weight = weight;
+        if (maxScore !== undefined) scoring.max_score = maxScore;
         if (expectedAnswers !== undefined) scoring.expected_answers = expectedAnswers;
         if (autoGradeConfig !== undefined) scoring.auto_grade_config = autoGradeConfig;
+        if (fieldScores !== undefined) scoring.field_scores = fieldScores;
         scoring.updated_at = new Date();
         await scoring.save();
       } else {
@@ -65,8 +69,10 @@ router.post(
           rubric_id: rubricId,
           scoring_type: scoringType,
           weight: weight !== undefined ? weight : 1.0,
+          max_score: maxScore,
           expected_answers: expectedAnswers,
           auto_grade_config: autoGradeConfig,
+          field_scores: fieldScores,
         });
       }
 
@@ -141,8 +147,10 @@ router.put(
     body('rubricId').optional().isUUID(),
     body('scoringType').optional().isIn(['auto', 'manual', 'hybrid']),
     body('weight').optional().isFloat({ min: 0 }),
+    body('maxScore').optional().isFloat({ min: 0 }),
     body('expectedAnswers').optional(),
     body('autoGradeConfig').optional(),
+    body('fieldScores').optional().isObject(),
   ],
   async (req, res, next) => {
     try {
@@ -152,7 +160,7 @@ router.put(
       }
 
       const { questionId } = req.params;
-      const { rubricId, scoringType, weight, expectedAnswers, autoGradeConfig } = req.body;
+      const { rubricId, scoringType, weight, maxScore, expectedAnswers, autoGradeConfig, fieldScores } = req.body;
 
       const scoring = await QuestionScoring.findOne({ where: { question_id: questionId } });
       if (!scoring) {
@@ -163,8 +171,10 @@ router.put(
       if (rubricId !== undefined) scoring.rubric_id = rubricId;
       if (scoringType !== undefined) scoring.scoring_type = scoringType;
       if (weight !== undefined) scoring.weight = weight;
+      if (maxScore !== undefined) scoring.max_score = maxScore;
       if (expectedAnswers !== undefined) scoring.expected_answers = expectedAnswers;
       if (autoGradeConfig !== undefined) scoring.auto_grade_config = autoGradeConfig;
+      if (fieldScores !== undefined) scoring.field_scores = fieldScores;
       scoring.updated_at = new Date();
 
       await scoring.save();

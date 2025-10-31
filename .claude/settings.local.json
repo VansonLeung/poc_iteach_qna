@@ -5,7 +5,13 @@
       "Bash(npm start)",
       "Bash(lsof:*)",
       "Bash(xargs kill:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(pkill:*)",
+      "Bash(npm run migrate:up:*)",
+      "Bash(npm run db:seed:*)",
+      "Bash(npm test:*)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []
