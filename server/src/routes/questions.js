@@ -49,6 +49,12 @@ router.post(
       const questionId = uuidv4();
       const userId = req.user.userId;
 
+      // Validate user exists (for foreign key constraint)
+      const user = await User.findByPk(userId);
+      if (!user) {
+        return res.status(401).json({ error: 'User not found. Please log in again.' });
+      }
+
       // If parent question is specified, check it exists
       if (parentQuestionId) {
         const parent = await Question.findByPk(parentQuestionId);

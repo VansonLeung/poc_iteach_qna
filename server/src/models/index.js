@@ -10,6 +10,14 @@ import UserActivitySubmission from './UserActivitySubmission.js';
 import UserActivitySubmissionVersion from './UserActivitySubmissionVersion.js';
 import UserActivitySubmissionAnswer from './UserActivitySubmissionAnswer.js';
 import UserActivitySubmissionAnswerVersion from './UserActivitySubmissionAnswerVersion.js';
+import Rubric from './Rubric.js';
+import RubricCriterion from './RubricCriterion.js';
+import RubricLevel from './RubricLevel.js';
+import QuestionScoring from './QuestionScoring.js';
+import ActivitySubmission from './ActivitySubmission.js';
+import QuestionResponse from './QuestionResponse.js';
+import QuestionScore from './QuestionScore.js';
+import SectionWeight from './SectionWeight.js';
 
 // Define associations
 
@@ -79,6 +87,53 @@ UserActivitySubmissionAnswer.hasMany(UserActivitySubmissionAnswerVersion, { fore
 UserActivitySubmissionAnswerVersion.belongsTo(UserActivitySubmissionAnswer, { foreignKey: 'answer_id', as: 'answer' });
 UserActivitySubmissionAnswerVersion.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
 
+// Rubric associations
+Rubric.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+Rubric.hasMany(RubricCriterion, { foreignKey: 'rubric_id', as: 'criteria' });
+Rubric.hasMany(QuestionScoring, { foreignKey: 'rubric_id', as: 'questionScorings' });
+Rubric.hasMany(QuestionScore, { foreignKey: 'rubric_id', as: 'scores' });
+
+// RubricCriterion associations
+RubricCriterion.belongsTo(Rubric, { foreignKey: 'rubric_id', as: 'rubric' });
+RubricCriterion.hasMany(RubricLevel, { foreignKey: 'criterion_id', as: 'levels' });
+
+// RubricLevel associations
+RubricLevel.belongsTo(RubricCriterion, { foreignKey: 'criterion_id', as: 'criterion' });
+
+// QuestionScoring associations
+QuestionScoring.belongsTo(Question, { foreignKey: 'question_id', as: 'question' });
+QuestionScoring.belongsTo(Rubric, { foreignKey: 'rubric_id', as: 'rubric' });
+Question.hasOne(QuestionScoring, { foreignKey: 'question_id', as: 'scoring' });
+
+// ActivitySubmission associations
+ActivitySubmission.belongsTo(Activity, { foreignKey: 'activity_id', as: 'activity' });
+ActivitySubmission.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+ActivitySubmission.belongsTo(User, { foreignKey: 'graded_by', as: 'grader' });
+ActivitySubmission.hasMany(QuestionResponse, { foreignKey: 'submission_id', as: 'responses' });
+ActivitySubmission.hasMany(QuestionScore, { foreignKey: 'submission_id', as: 'scores' });
+Activity.hasMany(ActivitySubmission, { foreignKey: 'activity_id', as: 'gradedSubmissions' });
+User.hasMany(ActivitySubmission, { foreignKey: 'user_id', as: 'gradedSubmissions' });
+User.hasMany(ActivitySubmission, { foreignKey: 'graded_by', as: 'gradedByMe' });
+
+// QuestionResponse associations
+QuestionResponse.belongsTo(ActivitySubmission, { foreignKey: 'submission_id', as: 'submission' });
+QuestionResponse.belongsTo(Question, { foreignKey: 'question_id', as: 'question' });
+QuestionResponse.hasMany(QuestionScore, { foreignKey: 'response_id', as: 'scores' });
+Question.hasMany(QuestionResponse, { foreignKey: 'question_id', as: 'responses' });
+
+// QuestionScore associations
+QuestionScore.belongsTo(QuestionResponse, { foreignKey: 'response_id', as: 'response' });
+QuestionScore.belongsTo(ActivitySubmission, { foreignKey: 'submission_id', as: 'submission' });
+QuestionScore.belongsTo(Question, { foreignKey: 'question_id', as: 'question' });
+QuestionScore.belongsTo(Rubric, { foreignKey: 'rubric_id', as: 'rubric' });
+QuestionScore.belongsTo(User, { foreignKey: 'graded_by', as: 'grader' });
+Question.hasMany(QuestionScore, { foreignKey: 'question_id', as: 'scores' });
+User.hasMany(QuestionScore, { foreignKey: 'graded_by', as: 'gradesGiven' });
+
+// SectionWeight associations
+SectionWeight.belongsTo(ActivityElement, { foreignKey: 'activity_element_id', as: 'element' });
+ActivityElement.hasOne(SectionWeight, { foreignKey: 'activity_element_id', as: 'weight' });
+
 // Export all models
 export {
   sequelize,
@@ -93,6 +148,14 @@ export {
   UserActivitySubmissionVersion,
   UserActivitySubmissionAnswer,
   UserActivitySubmissionAnswerVersion,
+  Rubric,
+  RubricCriterion,
+  RubricLevel,
+  QuestionScoring,
+  ActivitySubmission,
+  QuestionResponse,
+  QuestionScore,
+  SectionWeight,
 };
 
 // Sync database (for development)
@@ -119,5 +182,13 @@ export default {
   UserActivitySubmissionVersion,
   UserActivitySubmissionAnswer,
   UserActivitySubmissionAnswerVersion,
+  Rubric,
+  RubricCriterion,
+  RubricLevel,
+  QuestionScoring,
+  ActivitySubmission,
+  QuestionResponse,
+  QuestionScore,
+  SectionWeight,
   syncDatabase,
 };

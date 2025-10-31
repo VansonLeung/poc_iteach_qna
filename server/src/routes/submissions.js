@@ -43,6 +43,12 @@ router.post(
       const submissionId = uuidv4();
       const userId = req.user.userId;
 
+      // Validate user exists
+      const user = await User.findByPk(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
       // Validate activity exists and is active
       const activity = await Activity.findByPk(activityId, {
         attributes: ['id', 'status']

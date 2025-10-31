@@ -367,6 +367,294 @@ async function seed() {
 
     console.log('✓ Created 4 activity elements (1 section with 2 nested questions, 1 standalone question)');
 
+    // Create sample rubrics
+    const rubric1Id = uuidv4();
+    const rubric2Id = uuidv4();
+    const rubric3Id = uuidv4();
+
+    // Rubric 1: Criteria-based rubric for essay questions
+    db.prepare(`
+      INSERT INTO rubrics (id, title, description, rubric_type, max_score, created_by, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      rubric1Id,
+      'Essay Quality Rubric',
+      'Comprehensive criteria-based rubric for evaluating written responses',
+      'criteria',
+      100,
+      teacherId,
+      'active'
+    );
+
+    // Criteria for Essay Quality Rubric
+    const criterion1Id = uuidv4();
+    const criterion2Id = uuidv4();
+    const criterion3Id = uuidv4();
+
+    db.prepare(`
+      INSERT INTO rubric_criteria (id, rubric_id, criterion_name, description, max_score, order_index)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      criterion1Id,
+      rubric1Id,
+      'Content Accuracy',
+      'Correctness and completeness of information',
+      40,
+      0
+    );
+
+    db.prepare(`
+      INSERT INTO rubric_criteria (id, rubric_id, criterion_name, description, max_score, order_index)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      criterion2Id,
+      rubric1Id,
+      'Organization & Structure',
+      'Logical flow and clear organization of ideas',
+      30,
+      1
+    );
+
+    db.prepare(`
+      INSERT INTO rubric_criteria (id, rubric_id, criterion_name, description, max_score, order_index)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      criterion3Id,
+      rubric1Id,
+      'Writing Quality',
+      'Grammar, spelling, and clarity of expression',
+      30,
+      2
+    );
+
+    // Levels for Content Accuracy
+    const levels = [
+      { criterion_id: criterion1Id, name: 'Excellent', desc: 'All information is accurate and comprehensive', score: 40, order: 0 },
+      { criterion_id: criterion1Id, name: 'Good', desc: 'Most information is accurate with minor gaps', score: 30, order: 1 },
+      { criterion_id: criterion1Id, name: 'Fair', desc: 'Some accurate information but significant gaps', score: 20, order: 2 },
+      { criterion_id: criterion1Id, name: 'Poor', desc: 'Limited or inaccurate information', score: 10, order: 3 },
+
+      { criterion_id: criterion2Id, name: 'Excellent', desc: 'Well-organized with clear logical flow', score: 30, order: 0 },
+      { criterion_id: criterion2Id, name: 'Good', desc: 'Generally organized with minor issues', score: 22, order: 1 },
+      { criterion_id: criterion2Id, name: 'Fair', desc: 'Somewhat disorganized or unclear', score: 15, order: 2 },
+      { criterion_id: criterion2Id, name: 'Poor', desc: 'Poorly organized or confusing', score: 7, order: 3 },
+
+      { criterion_id: criterion3Id, name: 'Excellent', desc: 'Excellent grammar and clarity', score: 30, order: 0 },
+      { criterion_id: criterion3Id, name: 'Good', desc: 'Good writing with minor errors', score: 22, order: 1 },
+      { criterion_id: criterion3Id, name: 'Fair', desc: 'Acceptable writing with several errors', score: 15, order: 2 },
+      { criterion_id: criterion3Id, name: 'Poor', desc: 'Poor writing quality with many errors', score: 7, order: 3 },
+    ];
+
+    levels.forEach(level => {
+      db.prepare(`
+        INSERT INTO rubric_levels (id, criterion_id, level_name, description, score_value, order_index)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(uuidv4(), level.criterion_id, level.name, level.desc, level.score, level.order);
+    });
+
+    // Rubric 2: Points-based rubric
+    db.prepare(`
+      INSERT INTO rubrics (id, title, description, rubric_type, max_score, created_by, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      rubric2Id,
+      'Multiple Choice Points',
+      'Simple points-based scoring for objective questions',
+      'points',
+      10,
+      teacherId,
+      'active'
+    );
+
+    // Rubric 3: Pass/Fail rubric
+    db.prepare(`
+      INSERT INTO rubrics (id, title, description, rubric_type, max_score, created_by, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      rubric3Id,
+      'Participation Check',
+      'Pass/fail rubric for participation questions',
+      'pass_fail',
+      1,
+      teacherId,
+      'active'
+    );
+
+    console.log('✓ Created 3 sample rubrics (criteria-based, points-based, pass/fail)');
+
+    // Create question scoring configurations
+    db.prepare(`
+      INSERT INTO question_scoring (id, question_id, rubric_id, scoring_type, weight, expected_answers)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      uuidv4(),
+      question1Id,
+      rubric1Id,
+      'manual',
+      2.0,
+      null
+    );
+
+    db.prepare(`
+      INSERT INTO question_scoring (id, question_id, rubric_id, scoring_type, weight, expected_answers, auto_grade_config)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      uuidv4(),
+      question2Id,
+      rubric2Id,
+      'auto',
+      1.5,
+      JSON.stringify({
+        'checkbox': ['string', 'number', 'boolean']
+      }),
+      JSON.stringify({
+        matching_strategy: 'exact',
+        partial_credit: true,
+        points_per_correct: 2.5
+      })
+    );
+
+    db.prepare(`
+      INSERT INTO question_scoring (id, question_id, rubric_id, scoring_type, weight)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      uuidv4(),
+      question3Id,
+      rubric3Id,
+      'manual',
+      0.5
+    );
+
+    console.log('✓ Created 3 question scoring configurations');
+
+    // Create sample submission
+    const submissionId = uuidv4();
+    db.prepare(`
+      INSERT INTO activity_submissions (id, activity_id, user_id, status, submitted_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      submissionId,
+      activityId,
+      studentId,
+      'submitted',
+      new Date().toISOString()
+    );
+
+    // Create sample question responses
+    const response1Id = uuidv4();
+    const response2Id = uuidv4();
+    const response3Id = uuidv4();
+
+    db.prepare(`
+      INSERT INTO question_responses (id, submission_id, question_id, response_data, is_auto_graded)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      response1Id,
+      submissionId,
+      question1Id,
+      JSON.stringify({
+        answer: 'JavaScript is a high-level, interpreted programming language that is widely used for web development. It allows developers to create interactive web pages and is one of the core technologies of the World Wide Web.'
+      }),
+      0
+    );
+
+    db.prepare(`
+      INSERT INTO question_responses (id, submission_id, question_id, response_data, is_auto_graded, auto_grade_result)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      response2Id,
+      submissionId,
+      question2Id,
+      JSON.stringify({
+        selected: ['string', 'number', 'boolean']
+      }),
+      1,
+      JSON.stringify({
+        correct: true,
+        score: 10,
+        max_score: 10
+      })
+    );
+
+    db.prepare(`
+      INSERT INTO question_responses (id, submission_id, question_id, response_data, is_auto_graded)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      response3Id,
+      submissionId,
+      question3Id,
+      JSON.stringify({
+        experience: 'intermediate'
+      }),
+      0
+    );
+
+    // Create sample scores (graded responses)
+    db.prepare(`
+      INSERT INTO question_scores (id, response_id, submission_id, question_id, score, max_score, rubric_id, criteria_scores, feedback, graded_by, is_current, version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      uuidv4(),
+      response1Id,
+      submissionId,
+      question1Id,
+      85,
+      100,
+      rubric1Id,
+      JSON.stringify({
+        [criterion1Id]: 35,
+        [criterion2Id]: 25,
+        [criterion3Id]: 25
+      }),
+      'Good explanation of JavaScript! You covered the main points well. Consider adding more details about use cases beyond web development.',
+      teacherId,
+      1,
+      1
+    );
+
+    db.prepare(`
+      INSERT INTO question_scores (id, response_id, submission_id, question_id, score, max_score, rubric_id, feedback, graded_by, is_current, version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      uuidv4(),
+      response2Id,
+      submissionId,
+      question2Id,
+      10,
+      10,
+      rubric2Id,
+      'Perfect! All correct data types identified.',
+      teacherId,
+      1,
+      1
+    );
+
+    db.prepare(`
+      INSERT INTO question_scores (id, response_id, submission_id, question_id, score, max_score, rubric_id, feedback, graded_by, is_current, version)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      uuidv4(),
+      response3Id,
+      submissionId,
+      question3Id,
+      1,
+      1,
+      rubric3Id,
+      'Thanks for sharing your experience level!',
+      teacherId,
+      1,
+      1
+    );
+
+    // Update submission with total score
+    db.prepare(`
+      UPDATE activity_submissions
+      SET total_score = ?, max_possible_score = ?, percentage = ?, graded_by = ?, graded_at = ?, status = ?
+      WHERE id = ?
+    `).run(96, 111, 86.49, teacherId, new Date().toISOString(), 'graded', submissionId);
+
+    console.log('✓ Created 1 sample submission with 3 graded responses');
+
     console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
@@ -390,6 +678,9 @@ async function seed() {
 ║   - 3 Users (admin, teacher, student)                     ║
 ║   - 3 Questions                                           ║
 ║   - 1 Activity with 4 elements                            ║
+║   - 3 Rubrics (criteria-based, points, pass/fail)         ║
+║   - 3 Question scoring configurations                     ║
+║   - 1 Student submission (graded: 96/111 = 86.49%)        ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
     `);

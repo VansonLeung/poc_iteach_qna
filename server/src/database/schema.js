@@ -340,5 +340,158 @@ export const createTables = (db) => {
     CREATE INDEX IF NOT EXISTS idx_user_activity_submission_answer_permissions_answer_id ON user_activity_submission_answer_permissions(answer_id);
   `);
 
+  // Rubrics table (Reusable rubric templates)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rubrics (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      rubric_type TEXT NOT NULL CHECK(rubric_type IN ('points', 'criteria', 'pass_fail', 'percentage', 'custom')),
+      max_score REAL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived')),
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rubrics_type ON rubrics(rubric_type);
+    CREATE INDEX IF NOT EXISTS idx_rubrics_status ON rubrics(status);
+    CREATE INDEX IF NOT EXISTS idx_rubrics_created_by ON rubrics(created_by);
+  `);
+
+  // Rubric criteria table (For criteria-based rubrics)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rubric_criteria (
+      id TEXT PRIMARY KEY,
+      rubric_id TEXT NOT NULL,
+      criterion_name TEXT NOT NULL,
+      description TEXT,
+      max_score REAL NOT NULL,
+      order_index INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (rubric_id) REFERENCES rubrics(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_rubric_criteria_rubric_id ON rubric_criteria(rubric_id);
+  `);
+
+  // Rubric levels table (Performance levels for each criterion)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rubric_levels (
+      id TEXT PRIMARY KEY,
+      criterion_id TEXT NOT NULL,
+      level_name TEXT NOT NULL,
+      description TEXT,
+      score_value REAL NOT NULL,
+      order_index INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (criterion_id) REFERENCES rubric_criteria(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_rubric_levels_criterion_id ON rubric_levels(criterion_id);
+  `);
+
+  // Question scoring configuration
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_scoring (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL UNIQUE,
+      rubric_id TEXT,
+      scoring_type TEXT DEFAULT 'manual' CHECK(scoring_type IN ('auto', 'manual', 'hybrid')),
+      weight REAL DEFAULT 1.0,
+      expected_answers TEXT,
+      auto_grade_config TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE,
+      FOREIGN KEY (rubric_id) REFERENCES rubrics(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_scoring_question_id ON question_scoring(question_id);
+    CREATE INDEX IF NOT EXISTS idx_question_scoring_rubric_id ON question_scoring(rubric_id);
+  `);
+
+  // Activity submissions (enhanced version)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS activity_submissions (
+      id TEXT PRIMARY KEY,
+      activity_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      submitted_at TEXT,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'submitted', 'graded', 'returned')),
+      total_score REAL,
+      max_possible_score REAL,
+      percentage REAL,
+      instructor_feedback TEXT,
+      graded_by TEXT,
+      graded_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (activity_id) REFERENCES activities(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (graded_by) REFERENCES users(id),
+      UNIQUE(activity_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_activity_submissions_activity_id ON activity_submissions(activity_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_submissions_user_id ON activity_submissions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_submissions_status ON activity_submissions(status);
+  `);
+
+  // Question responses (Individual question answers with grading support)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_responses (
+      id TEXT PRIMARY KEY,
+      submission_id TEXT NOT NULL,
+      question_id TEXT NOT NULL,
+      response_data TEXT NOT NULL,
+      is_auto_graded INTEGER DEFAULT 0,
+      auto_grade_result TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (submission_id) REFERENCES activity_submissions(id) ON DELETE CASCADE,
+      FOREIGN KEY (question_id) REFERENCES questions(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_responses_submission_id ON question_responses(submission_id);
+    CREATE INDEX IF NOT EXISTS idx_question_responses_question_id ON question_responses(question_id);
+  `);
+
+  // Question scores (Grading results with history)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_scores (
+      id TEXT PRIMARY KEY,
+      response_id TEXT NOT NULL,
+      submission_id TEXT NOT NULL,
+      question_id TEXT NOT NULL,
+      score REAL NOT NULL,
+      max_score REAL NOT NULL,
+      rubric_id TEXT,
+      criteria_scores TEXT,
+      feedback TEXT,
+      graded_by TEXT NOT NULL,
+      graded_at TEXT NOT NULL DEFAULT (datetime('now')),
+      version INTEGER DEFAULT 1,
+      is_current INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (response_id) REFERENCES question_responses(id) ON DELETE CASCADE,
+      FOREIGN KEY (submission_id) REFERENCES activity_submissions(id) ON DELETE CASCADE,
+      FOREIGN KEY (question_id) REFERENCES questions(id),
+      FOREIGN KEY (rubric_id) REFERENCES rubrics(id) ON DELETE SET NULL,
+      FOREIGN KEY (graded_by) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_scores_response_id ON question_scores(response_id);
+    CREATE INDEX IF NOT EXISTS idx_question_scores_submission_id ON question_scores(submission_id);
+    CREATE INDEX IF NOT EXISTS idx_question_scores_is_current ON question_scores(is_current);
+  `);
+
+  // Section weights (For weighted scoring within activities)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS section_weights (
+      id TEXT PRIMARY KEY,
+      activity_element_id TEXT NOT NULL UNIQUE,
+      weight REAL DEFAULT 1.0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (activity_element_id) REFERENCES activity_elements(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_section_weights_activity_element_id ON section_weights(activity_element_id);
+  `);
+
   console.log('✓ All database tables created successfully');
 };

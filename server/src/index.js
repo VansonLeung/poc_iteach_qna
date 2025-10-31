@@ -16,6 +16,8 @@ import activityElementRoutes from './routes/activityElements.js';
 import questionRoutes from './routes/questions.js';
 import submissionRoutes from './routes/submissions.js';
 import submissionAnswerRoutes from './routes/submissionAnswers.js';
+import rubricRoutes from './routes/rubrics.js';
+import questionScoringRoutes from './routes/questionScoring.js';
 
 // Import middleware
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -50,6 +52,8 @@ app.use('/api/activity-elements', activityElementRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/submissions', submissionRoutes);
 app.use('/api/submission-answers', submissionAnswerRoutes);
+app.use('/api/rubrics', rubricRoutes);
+app.use('/api/question-scoring', questionScoringRoutes);
 
 // Error handling
 app.use(notFoundHandler);

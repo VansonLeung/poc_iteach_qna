@@ -1,7 +1,7 @@
 import express from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
-import { Activity, ActivityElement, ActivityElementVersion, Question, User } from '../models/index.js';
+import { Activity, ActivityElement, ActivityElementVersion, Question, QuestionScoring, Rubric, User } from '../models/index.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -35,13 +35,31 @@ const getNestedChildren = async (elementId) => {
     where: { parent_element_id: elementId },
     order: [['order_index', 'ASC']],
     include: [
-      { model: Question, as: 'question', attributes: ['id', 'title', 'body_html'] }
+      { 
+        model: Question, 
+        as: 'question', 
+        attributes: ['id', 'title', 'body_html'],
+        include: [
+          {
+            model: QuestionScoring,
+            as: 'scoring',
+            include: [
+              {
+                model: Rubric,
+                as: 'rubric',
+                attributes: ['id', 'title', 'rubric_type']
+              }
+            ]
+          }
+        ]
+      }
     ]
   });
 
   const childrenWithNested = [];
   for (const child of children) {
     const nestedChildren = await getNestedChildren(child.id);
+    const rubricInfo = child.question?.scoring?.rubric;
     childrenWithNested.push({
       id: child.id,
       activity_id: child.activity_id,
@@ -56,6 +74,9 @@ const getNestedChildren = async (elementId) => {
       version: child.version,
       question_title: child.question ? child.question.title : null,
       body_html: child.question ? child.question.body_html : null,
+      rubric_id: rubricInfo?.id || null,
+      rubric_title: rubricInfo?.title || null,
+      rubric_type: rubricInfo?.rubric_type || null,
       children: nestedChildren
     });
   }
@@ -346,7 +367,24 @@ router.get(
         offset,
         order: [['order_index', 'ASC']],
         include: [
-          { model: Question, as: 'question', attributes: ['id', 'title', 'body_html'] }
+          { 
+            model: Question, 
+            as: 'question', 
+            attributes: ['id', 'title', 'body_html'],
+            include: [
+              {
+                model: QuestionScoring,
+                as: 'scoring',
+                include: [
+                  {
+                    model: Rubric,
+                    as: 'rubric',
+                    attributes: ['id', 'title', 'rubric_type']
+                  }
+                ]
+              }
+            ]
+          }
         ]
       });
 
@@ -354,6 +392,7 @@ router.get(
       const elementsWithChildren = [];
       for (const e of elements) {
         const children = await getNestedChildren(e.id);
+        const rubricInfo = e.question?.scoring?.rubric;
         elementsWithChildren.push({
           id: e.id,
           activity_id: e.activity_id,
@@ -368,6 +407,9 @@ router.get(
           version: e.version,
           question_title: e.question ? e.question.title : null,
           body_html: e.question ? e.question.body_html : null,
+          rubric_id: rubricInfo?.id || null,
+          rubric_title: rubricInfo?.title || null,
+          rubric_type: rubricInfo?.rubric_type || null,
           children
         });
       }
@@ -397,7 +439,24 @@ router.get('/:id', authenticate, async (req, res, next) => {
 
     const element = await ActivityElement.findByPk(id, {
       include: [
-        { model: Question, as: 'question', attributes: ['id', 'title', 'body_html'] }
+        { 
+          model: Question, 
+          as: 'question', 
+          attributes: ['id', 'title', 'body_html'],
+          include: [
+            {
+              model: QuestionScoring,
+              as: 'scoring',
+              include: [
+                {
+                  model: Rubric,
+                  as: 'rubric',
+                  attributes: ['id', 'title', 'rubric_type']
+                }
+              ]
+            }
+          ]
+        }
       ]
     });
 
@@ -407,6 +466,7 @@ router.get('/:id', authenticate, async (req, res, next) => {
 
     // Get nested children
     const children = await getNestedChildren(id);
+    const rubricInfo = element.question?.scoring?.rubric;
 
     res.json({
       element: {
@@ -423,6 +483,9 @@ router.get('/:id', authenticate, async (req, res, next) => {
         version: element.version,
         question_title: element.question ? element.question.title : null,
         body_html: element.question ? element.question.body_html : null,
+        rubric_id: rubricInfo?.id || null,
+        rubric_title: rubricInfo?.title || null,
+        rubric_type: rubricInfo?.rubric_type || null,
         children
       }
     });
