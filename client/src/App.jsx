@@ -131,6 +131,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/activities/:id" element={<ActivityTaking />} />
           <Route path="/submissions" element={<SubmissionHistory />} />
+          <Route path="/submissions/:id/view" element={<ActivityTaking />} />
           <Route path="/submissions/:id/scores" element={<SubmissionScores />} />
 
           {/* Default redirect */}

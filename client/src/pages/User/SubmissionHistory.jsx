@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { submissionAPI } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { CheckCircle, Clock, Eye, Award } from 'lucide-react';
+import { CheckCircle, Clock, Eye, Award, Star } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function SubmissionHistory() {
@@ -57,7 +57,9 @@ export default function SubmissionHistory() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4 flex-1">
-                    {submission.status === 'submitted' ? (
+                    {submission.status === 'graded' ? (
+                      <Star className="h-8 w-8 text-blue-500" />
+                    ) : submission.status === 'submitted' ? (
                       <CheckCircle className="h-8 w-8 text-green-500" />
                     ) : (
                       <Clock className="h-8 w-8 text-yellow-500" />
@@ -72,7 +74,12 @@ export default function SubmissionHistory() {
                         </span>
                         {submission.submitted_at && (
                           <span>
-                            Submitted: {format(new Date(submission.submitted_at), 'MMM dd, yyyy')}
+                            Submitted: {format(new Date(submission.submitted_at), 'MMM dd, yyyy HH:mm:ss')}
+                          </span>
+                        )}
+                        {submission.status === 'graded' && submission.total_score != null && submission.max_possible_score != null && (
+                          <span className="font-semibold text-blue-600">
+                            Score: {submission.total_score}/{submission.max_possible_score}
                           </span>
                         )}
                         <span>
@@ -82,7 +89,7 @@ export default function SubmissionHistory() {
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    {submission.status === 'submitted' && (
+                    {(submission.status === 'submitted' || submission.status === 'graded') && (
                       <Button
                         variant="default"
                         onClick={() => navigate(`/submissions/${submission.id}/scores`)}
@@ -92,11 +99,17 @@ export default function SubmissionHistory() {
                       </Button>
                     )}
                     <Button
-                      variant={submission.status === 'submitted' ? 'outline' : 'default'}
-                      onClick={() => navigate(`/activities/${submission.activity_id}`)}
+                      variant={(submission.status === 'submitted' || submission.status === 'graded') ? 'outline' : 'default'}
+                      onClick={() => {
+                        if (submission.status === 'submitted' || submission.status === 'graded') {
+                          navigate(`/submissions/${submission.id}/view`);
+                        } else {
+                          navigate(`/activities/${submission.activity_id}`);
+                        }
+                      }}
                     >
                       <Eye className="mr-2 h-4 w-4" />
-                      {submission.status === 'submitted' ? 'View' : 'Continue'}
+                      {(submission.status === 'submitted' || submission.status === 'graded') ? 'View' : 'Continue'}
                     </Button>
                   </div>
                 </div>

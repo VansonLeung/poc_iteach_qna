@@ -209,27 +209,29 @@ export default function StudentAnswerDisplay({ response, expectedAnswers, isUnan
         <TabsContent value="correct" className="mt-4">
           <Card>
             <CardContent className="pt-6">
-              {expectedData ? (
+              {questionBodyHtml ? (
                 <>
-                  {questionBodyHtml ? (
-                    <>
-                      <div
-                        key="correct-body"
-                        ref={questionBodyRef}
-                        className="p-4 bg-green-50 border border-green-200 rounded-md"
-                        dangerouslySetInnerHTML={{ __html: questionBodyHtml }}
-                      />
-                      <div className="mt-4 pt-4 border-t">
-                        <Label className="text-sm font-medium text-muted-foreground">Answer Summary:</Label>
-                        <div className="mt-2">
-                          {renderAnswerFields(expectedData, true)}
-                        </div>
+                  <div
+                    key="correct-body"
+                    ref={questionBodyRef}
+                    className="p-4 bg-green-50 border border-green-200 rounded-md"
+                    dangerouslySetInnerHTML={{ __html: questionBodyHtml }}
+                  />
+                  {expectedData ? (
+                    <div className="mt-4 pt-4 border-t">
+                      <Label className="text-sm font-medium text-muted-foreground">Answer Summary:</Label>
+                      <div className="mt-2">
+                        {renderAnswerFields(expectedData, true)}
                       </div>
-                    </>
+                    </div>
                   ) : (
-                    renderAnswerFields(expectedData, true)
+                    <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                      <p className="text-sm text-amber-700 italic">No expected answer configured for this question</p>
+                    </div>
                   )}
                 </>
+              ) : expectedData ? (
+                renderAnswerFields(expectedData, true)
               ) : (
                 <p className="text-sm text-gray-500 italic">No expected answer configured</p>
               )}
