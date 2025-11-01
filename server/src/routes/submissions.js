@@ -31,8 +31,66 @@ const saveSubmissionVersion = async (submissionId, submission, userId) => {
 };
 
 /**
- * POST /api/submissions
- * Create new user activity submission
+ * @swagger
+ * /api/submissions:
+ *   post:
+ *     summary: Create a new submission
+ *     description: Creates a new user activity submission. Students can only create submissions for themselves. Prevents duplicate in-progress submissions.
+ *     tags: [Submissions]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - activityId
+ *             properties:
+ *               activityId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the activity to create submission for
+ *             example:
+ *               activityId: "550e8400-e29b-41d4-a716-446655440000"
+ *     responses:
+ *       201:
+ *         description: Submission created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Submission created successfully"
+ *                 submission:
+ *                   $ref: '#/components/schemas/Submission'
+ *       400:
+ *         description: Validation error or activity not active
+ *         content:
+ *           application/json:
+ *             schema:
+ *               oneOf:
+ *                 - $ref: '#/components/schemas/ValidationError'
+ *                 - $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized - missing or invalid token
+ *       404:
+ *         description: User or activity not found
+ *       409:
+ *         description: User already has an in-progress submission for this activity
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                 submissionId:
+ *                   type: string
+ *                   format: uuid
  */
 router.post(
   '/',
@@ -119,8 +177,55 @@ router.post(
 );
 
 /**
- * PUT /api/submissions/:id
- * Edit user activity submission (primarily for status updates)
+ * @swagger
+ * /api/submissions/{id}:
+ *   put:
+ *     summary: Update submission status
+ *     description: Updates a submission's status. Users can update their own submissions, admin/teacher can update any. Increments version and saves version history.
+ *     tags: [Submissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: ['in-progress', 'submitted', 'archived']
+ *                 description: New status for the submission
+ *             example:
+ *               status: "submitted"
+ *     responses:
+ *       200:
+ *         description: Submission updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 submission:
+ *                   $ref: '#/components/schemas/Submission'
+ *       400:
+ *         description: Validation error or no fields to update
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Submission not found
  */
 router.put(
   '/:id',
@@ -195,8 +300,66 @@ router.put(
 );
 
 /**
- * GET /api/submissions
- * Find user activity submissions with filters
+ * @swagger
+ * /api/submissions:
+ *   get:
+ *     summary: Get submissions list with filters
+ *     description: Retrieves submissions with pagination and filtering. Students can only see their own submissions. Includes activity and user details, plus scoring information.
+ *     tags: [Submissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: activityId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by activity ID
+ *       - in: query
+ *         name: userId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by user ID (admin/teacher only, students automatically filtered to their own)
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: ['in-progress', 'submitted', 'graded', 'archived']
+ *         description: Filter by submission status
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Number of items per page
+ *     responses:
+ *       200:
+ *         description: Submissions retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 submissions:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Submission'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
  */
 router.get(
   '/',
@@ -293,8 +456,42 @@ router.get(
 );
 
 /**
- * GET /api/submissions/:id
- * Get submission by ID with answers
+ * @swagger
+ * /api/submissions/{id}:
+ *   get:
+ *     summary: Get submission by ID with answers
+ *     description: Retrieves a specific submission with all its answers. Users can only view their own submissions unless they are admin/teacher.
+ *     tags: [Submissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     responses:
+ *       200:
+ *         description: Submission retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 submission:
+ *                   $ref: '#/components/schemas/Submission'
+ *                 answers:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/SubmissionAnswer'
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Submission not found
  */
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
@@ -368,8 +565,39 @@ router.get('/:id', authenticate, async (req, res, next) => {
 });
 
 /**
- * DELETE /api/submissions/:id/archive
- * Archive submission
+ * @swagger
+ * /api/submissions/{id}/archive:
+ *   delete:
+ *     summary: Archive a submission
+ *     description: Marks a submission as archived (soft delete). Users can archive their own submissions, admin/teacher can archive any.
+ *     tags: [Submissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     responses:
+ *       200:
+ *         description: Submission archived successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Submission archived successfully"
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Submission not found
  */
 router.delete(
   '/:id/archive',

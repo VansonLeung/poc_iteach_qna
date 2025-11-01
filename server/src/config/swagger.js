@@ -272,6 +272,97 @@ const options = {
             },
             status: {
               type: 'string',
+              enum: ['in-progress', 'submitted', 'graded', 'archived']
+            },
+            version: {
+              type: 'integer'
+            },
+            submitted_at: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true
+            },
+            submitted_by: {
+              type: 'string',
+              format: 'uuid'
+            },
+            updated_by: {
+              type: 'string',
+              format: 'uuid'
+            },
+            total_score: {
+              type: 'number',
+              nullable: true
+            },
+            max_possible_score: {
+              type: 'number',
+              nullable: true
+            },
+            percentage: {
+              type: 'number',
+              nullable: true
+            },
+            graded_at: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true
+            },
+            graded_by: {
+              type: 'string',
+              format: 'uuid',
+              nullable: true
+            },
+            created_at: {
+              type: 'string',
+              format: 'date-time'
+            },
+            updated_at: {
+              type: 'string',
+              format: 'date-time'
+            },
+            activity_title: {
+              type: 'string',
+              nullable: true
+            },
+            user_email: {
+              type: 'string',
+              nullable: true
+            },
+            first_name: {
+              type: 'string',
+              nullable: true
+            },
+            last_name: {
+              type: 'string',
+              nullable: true
+            }
+          }
+        },
+        SubmissionAnswer: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              format: 'uuid'
+            },
+            submission_id: {
+              type: 'string',
+              format: 'uuid'
+            },
+            question_id: {
+              type: 'string',
+              format: 'uuid'
+            },
+            element_uuid: {
+              type: 'string',
+              nullable: true
+            },
+            answer_data: {
+              type: 'object',
+              description: 'JSON object containing answer field values'
+            },
+            status: {
+              type: 'string',
               enum: ['in-progress', 'submitted', 'archived']
             },
             version: {
@@ -282,6 +373,14 @@ const options = {
               format: 'date-time',
               nullable: true
             },
+            submitted_by: {
+              type: 'string',
+              format: 'uuid'
+            },
+            updated_by: {
+              type: 'string',
+              format: 'uuid'
+            },
             created_at: {
               type: 'string',
               format: 'date-time'
@@ -289,8 +388,44 @@ const options = {
             updated_at: {
               type: 'string',
               format: 'date-time'
+            },
+            question_title: {
+              type: 'string',
+              nullable: true
             }
           }
+        },
+        QuestionGrade: {
+          type: 'object',
+          properties: {
+            answerId: {
+              type: 'string',
+              format: 'uuid'
+            },
+            score: {
+              type: 'number',
+              minimum: 0
+            },
+            maxScore: {
+              type: 'number',
+              minimum: 0
+            },
+            feedback: {
+              type: 'string',
+              nullable: true
+            },
+            criteriaScores: {
+              type: 'object',
+              nullable: true,
+              description: 'Object mapping criterion IDs to scores'
+            },
+            rubricId: {
+              type: 'string',
+              format: 'uuid',
+              nullable: true
+            }
+          },
+          required: ['answerId', 'score', 'maxScore']
         },
         Rubric: {
           type: 'object',

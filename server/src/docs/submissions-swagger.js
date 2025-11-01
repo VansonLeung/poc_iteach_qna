@@ -290,3 +290,311 @@
  *       404:
  *         description: Submission not found
  */
+
+/**
+ * @swagger
+ * /api/submissions/{id}/scores:
+ *   get:
+ *     summary: Get submission score summary
+ *     description: Retrieves detailed scoring information for a submission including all question scores
+ *     tags: [Scoring]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     responses:
+ *       200:
+ *         description: Score summary retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Insufficient permissions
+ *       404:
+ *         description: Submission not found
+ */
+
+/**
+ * @swagger
+ * /api/submissions/{id}/auto-grade:
+ *   post:
+ *     summary: Trigger auto-grading for submission
+ *     description: Automatically grades all questions in a submission based on expected answers. Only works on submitted submissions. Admin/teacher only.
+ *     tags: [Scoring]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     responses:
+ *       200:
+ *         description: Auto-grading completed successfully
+ *       400:
+ *         description: Invalid status - only submitted submissions can be auto-graded
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - admin/teacher only
+ *       404:
+ *         description: Submission not found
+ */
+
+/**
+ * @swagger
+ * /api/submissions/{id}/calculate-score:
+ *   post:
+ *     summary: Recalculate submission total score
+ *     description: Recalculates the total score from existing question scores. Useful after manual grading changes. Admin/teacher only.
+ *     tags: [Scoring]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     responses:
+ *       200:
+ *         description: Score recalculated successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - admin/teacher only
+ *       404:
+ *         description: Submission not found
+ */
+
+/**
+ * @swagger
+ * /api/submissions/{id}/grading:
+ *   get:
+ *     summary: Get submission for grading interface
+ *     description: Retrieves complete submission details formatted for the grading interface. Includes questions, answers, rubrics, and scoring configuration. Admin/teacher only.
+ *     tags: [Scoring]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     responses:
+ *       200:
+ *         description: Grading data retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - admin/teacher only
+ *       404:
+ *         description: Submission not found
+ */
+
+/**
+ * @swagger
+ * /api/submissions/{id}/answers/{answerId}/grade:
+ *   post:
+ *     summary: Manually grade a question answer
+ *     description: Creates a manual grade for a specific question answer. Admin/teacher only.
+ *     tags: [Scoring]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *       - in: path
+ *         name: answerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Answer ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - score
+ *               - maxScore
+ *             properties:
+ *               score:
+ *                 type: number
+ *                 minimum: 0
+ *               maxScore:
+ *                 type: number
+ *                 minimum: 0
+ *               feedback:
+ *                 type: string
+ *               criteriaScores:
+ *                 type: object
+ *               rubricId:
+ *                 type: string
+ *                 format: uuid
+ *     responses:
+ *       200:
+ *         description: Question graded successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - admin/teacher only
+ *       404:
+ *         description: Submission or answer not found
+ *   put:
+ *     summary: Update existing question grade
+ *     description: Updates an existing grade for a question answer. Admin/teacher only.
+ *     tags: [Scoring]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *       - in: path
+ *         name: answerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Answer ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               score:
+ *                 type: number
+ *                 minimum: 0
+ *               maxScore:
+ *                 type: number
+ *                 minimum: 0
+ *               feedback:
+ *                 type: string
+ *               criteriaScores:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Grade updated successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - admin/teacher only
+ *       404:
+ *         description: Submission, answer, or existing grade not found
+ */
+
+/**
+ * @swagger
+ * /api/submissions/{id}/grade-all:
+ *   post:
+ *     summary: Grade all questions in submission at once
+ *     description: Bulk grade all questions in a submission. Useful for batch grading. Admin/teacher only.
+ *     tags: [Scoring]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - grades
+ *             properties:
+ *               grades:
+ *                 type: array
+ *                 items:
+ *                   $ref: '#/components/schemas/QuestionGrade'
+ *     responses:
+ *       200:
+ *         description: Grading completed
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - admin/teacher only
+ *       404:
+ *         description: Submission not found
+ */
+
+/**
+ * @swagger
+ * /api/submissions/{id}/status:
+ *   patch:
+ *     summary: Change submission status
+ *     description: Manually change submission status. Can set to 'graded' status. Admin/teacher only.
+ *     tags: [Submissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Submission ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: ['in-progress', 'submitted', 'graded', 'archived']
+ *     responses:
+ *       200:
+ *         description: Status updated successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - admin/teacher only
+ *       404:
+ *         description: Submission not found
+ */
