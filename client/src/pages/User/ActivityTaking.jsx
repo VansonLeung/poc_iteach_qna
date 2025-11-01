@@ -34,17 +34,39 @@ export default function ActivityTaking() {
       setElements(flattenElements(elementsRes.data.elements || []));
 
       // Get or create submission
-      const submissionsRes = await submissionAPI.getAll({ activityId: id, status: 'in-progress' });
+      // First try to get in-progress submission
+      let submissionsRes = await submissionAPI.getAll({ activityId: id, status: 'in-progress' });
+      console.log('First query (in-progress):', submissionsRes.data);
+      
+      // If no in-progress submission, get the most recent submission (could be submitted)
+      if (!submissionsRes.data.submissions?.length) {
+        console.log('No in-progress submissions found, fetching any submission...');
+        submissionsRes = await submissionAPI.getAll({ activityId: id, limit: 1 });
+        console.log('Second query (any status):', submissionsRes.data);
+      }
+      
       if (submissionsRes.data.submissions?.length > 0) {
         const sub = submissionsRes.data.submissions[0];
+        console.log('Loading submission:', sub.id, 'Status:', sub.status);
         setSubmission(sub);
 
         // Load existing answers
         const answersRes = await submissionAnswerAPI.getAll({ submissionId: sub.id });
+        console.log('Loaded answers:', answersRes.data.answers?.length || 0);
         const answersMap = {};
         const answerIdsMap = {};
         answersRes.data.answers?.forEach(ans => {
-          answersMap[ans.element_uuid] = ans.answer_data;
+          // Parse the answer_data JSON and extract the value
+          let parsedAnswer;
+          try {
+            parsedAnswer = typeof ans.answer_data === 'string' 
+              ? JSON.parse(ans.answer_data) 
+              : ans.answer_data;
+            answersMap[ans.element_uuid] = parsedAnswer.value || parsedAnswer;
+          } catch (e) {
+            console.error('Error parsing answer_data:', e);
+            answersMap[ans.element_uuid] = ans.answer_data;
+          }
           answerIdsMap[ans.element_uuid] = ans.id;
         });
         setAnswers(answersMap);
@@ -78,20 +100,28 @@ export default function ActivityTaking() {
     if (!questionBodyRef.current || !submission) return;
 
     const container = questionBodyRef.current;
-    const inputs = container.querySelectorAll('[data-answer-field]');
+    // Look for elements with data-element-uuid instead of data-answer-field
+    const inputs = container.querySelectorAll('[data-element-uuid]');
+    const isSubmitted = submission.status === 'submitted';
 
     const handleInputChange = (e) => {
+      // Don't allow changes if submitted
+      if (isSubmitted) {
+        e.preventDefault();
+        return;
+      }
+
       const element = e.target;
-      const fieldName = element.closest('[data-answer-field]')?.getAttribute('data-answer-field');
+      // Use data-element-uuid as the field identifier
+      const fieldName = element.getAttribute('data-element-uuid');
 
       if (!fieldName) return;
 
       let value;
       if (element.type === 'checkbox') {
-        // For checkboxes, collect all checked values
-        const container = element.closest('[data-answer-field]');
-        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-        value = Array.from(checkboxes)
+        // For checkboxes, collect all checked values with the same data-element-uuid
+        const allCheckboxes = container.querySelectorAll(`input[type="checkbox"][data-element-uuid="${fieldName}"]`);
+        value = Array.from(allCheckboxes)
           .filter(cb => cb.checked)
           .map(cb => cb.value);
       } else if (element.type === 'radio') {
@@ -100,50 +130,43 @@ export default function ActivityTaking() {
         value = element.value;
       }
 
+      console.log('Answer updated:', fieldName, value);
       setAnswers(prev => ({ ...prev, [fieldName]: value }));
     };
 
     inputs.forEach(input => {
-      const innerInputs = input.querySelectorAll('input, textarea, select');
-      innerInputs.forEach(innerInput => {
-        innerInput.addEventListener('change', handleInputChange);
-        innerInput.addEventListener('input', handleInputChange);
-      });
+      // Disable inputs if submitted
+      if (isSubmitted) {
+        input.disabled = true;
+        input.style.cursor = 'not-allowed';
+        input.style.opacity = '0.6';
+      }
+      
+      input.addEventListener('change', handleInputChange);
+      input.addEventListener('input', handleInputChange);
     });
 
     // Restore saved answers
     inputs.forEach(input => {
-      const fieldName = input.getAttribute('data-answer-field');
+      const fieldName = input.getAttribute('data-element-uuid');
       if (fieldName && answers[fieldName] !== undefined) {
         const savedValue = answers[fieldName];
-        const inputType = input.getAttribute('data-input-type');
+        const elementType = input.getAttribute('data-element-type');
 
-        if (inputType === 'checkbox') {
-          const checkboxes = input.querySelectorAll('input[type="checkbox"]');
-          checkboxes.forEach(cb => {
-            cb.checked = Array.isArray(savedValue) && savedValue.includes(cb.value);
-          });
-        } else if (inputType === 'radio') {
-          const radios = input.querySelectorAll('input[type="radio"]');
-          radios.forEach(radio => {
-            radio.checked = radio.value === savedValue;
-          });
+        if (elementType === 'checkbox' || input.type === 'checkbox') {
+          input.checked = Array.isArray(savedValue) ? savedValue.includes(input.value) : savedValue === input.value;
+        } else if (elementType === 'radio' || input.type === 'radio') {
+          input.checked = input.value === savedValue;
         } else {
-          const innerInput = input.querySelector('input, textarea, select');
-          if (innerInput) {
-            innerInput.value = savedValue;
-          }
+          input.value = savedValue;
         }
       }
     });
 
     return () => {
       inputs.forEach(input => {
-        const innerInputs = input.querySelectorAll('input, textarea, select');
-        innerInputs.forEach(innerInput => {
-          innerInput.removeEventListener('change', handleInputChange);
-          innerInput.removeEventListener('input', handleInputChange);
-        });
+        input.removeEventListener('change', handleInputChange);
+        input.removeEventListener('input', handleInputChange);
       });
     };
   }, [currentElementIndex, elements, submission, answers]);
@@ -153,11 +176,16 @@ export default function ActivityTaking() {
 
     setSaving(true);
     try {
-      const currentElement = elements[currentElementIndex];
-
       // Save each answer
       for (const [elementUuid, answerValue] of Object.entries(answers)) {
         try {
+          // Find the element to get its question_id
+          const element = elements.find(el => el.id === elementUuid);
+          if (!element) {
+            console.error(`Element not found for UUID: ${elementUuid}`);
+            continue;
+          }
+
           const answerData = { value: answerValue };
           const existingAnswerId = savedAnswerIds[elementUuid];
 
@@ -170,7 +198,7 @@ export default function ActivityTaking() {
             // Create new answer
             const response = await submissionAnswerAPI.create({
               submissionId: submission.id,
-              questionId: currentElement.question_id,
+              questionId: element.question_id,
               elementUuid,
               answerData: JSON.stringify(answerData)
             });
@@ -266,6 +294,12 @@ export default function ActivityTaking() {
 
   const currentElement = elements[currentElementIndex];
   const isLast = currentElementIndex === elements.length - 1;
+  const isSubmitted = submission?.status === 'submitted';
+
+  // Process the HTML to replace data-element-uuid with the activity element ID
+  const processedBodyHtml = currentElement?.body_html 
+    ? currentElement.body_html.replace(/data-element-uuid="[^"]*"/g, `data-element-uuid="${currentElement.id}"`)
+    : '';
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -277,6 +311,13 @@ export default function ActivityTaking() {
         </Button>
         <h1 className="text-3xl font-bold mt-4">{activity.title}</h1>
         <p className="text-muted-foreground mt-2">{activity.description}</p>
+        {isSubmitted && (
+          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <p className="text-sm font-medium text-green-800">
+              ✓ This activity has been submitted. Viewing in read-only mode.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Progress */}
@@ -285,7 +326,10 @@ export default function ActivityTaking() {
           Question {currentElementIndex + 1} of {elements.length}
         </span>
         <span className="text-sm text-muted-foreground">
-          {Math.round(((currentElementIndex + 1) / elements.length) * 100)}% Complete
+          {Math.round((Object.keys(answers).filter(key => {
+            const value = answers[key];
+            return value !== undefined && value !== '' && !(Array.isArray(value) && value.length === 0);
+          }).length / elements.length) * 100)}% Complete
         </span>
       </div>
 
@@ -294,15 +338,17 @@ export default function ActivityTaking() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>{currentElement.question_title}</CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={saveAnswers}
-              disabled={saving}
-            >
-              <Save className="h-4 w-4 mr-2" />
-              {saving ? 'Saving...' : 'Save Progress'}
-            </Button>
+            {!isSubmitted && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={saveAnswers}
+                disabled={saving}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {saving ? 'Saving...' : 'Save Progress'}
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -310,7 +356,7 @@ export default function ActivityTaking() {
           <div
             ref={questionBodyRef}
             className="prose max-w-none mb-6"
-            dangerouslySetInnerHTML={{ __html: currentElement.body_html }}
+            dangerouslySetInnerHTML={{ __html: processedBodyHtml }}
           />
         </CardContent>
       </Card>
@@ -326,12 +372,17 @@ export default function ActivityTaking() {
           Previous
         </Button>
 
-        {isLast ? (
+        {!isSubmitted && isLast ? (
           <Button onClick={handleSubmit}>
             <CheckCircle className="mr-2 h-4 w-4" />
             Submit Activity
           </Button>
-        ) : (
+        ) : !isSubmitted ? (
+          <Button onClick={() => setCurrentElementIndex(prev => Math.min(elements.length - 1, prev + 1))}>
+            Next
+            <ChevronRight className="ml-2 h-4 w-4" />
+          </Button>
+        ) : isLast ? null : (
           <Button onClick={() => setCurrentElementIndex(prev => Math.min(elements.length - 1, prev + 1))}>
             Next
             <ChevronRight className="ml-2 h-4 w-4" />

@@ -36,6 +36,7 @@ export default function QuestionBuilder() {
   const [tagInput, setTagInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [scoringExists, setScoringExists] = useState(false);
 
   const isEditMode = !!id;
 
@@ -77,6 +78,7 @@ export default function QuestionBuilder() {
       const response = await questionScoringAPI.get(id);
       if (response.data.scoring) {
         const scoring = response.data.scoring;
+        setScoringExists(true);
         setScoringData({
           rubricId: scoring.rubric_id || '',
           scoringType: scoring.scoring_type || 'manual',
@@ -92,6 +94,7 @@ export default function QuestionBuilder() {
       }
     } catch (error) {
       // It's OK if no scoring exists yet
+      setScoringExists(false);
       console.log('No scoring config found for this question');
     }
   };
@@ -208,22 +211,46 @@ export default function QuestionBuilder() {
 
       // Save or update scoring configuration if rubric is selected or answers configured
       if (scoringData.rubricId || scoringData.scoringType !== 'manual' || Object.keys(scoringData.expectedAnswers).length > 0) {
+        // Clean expectedAnswers - remove entries with empty values
+        const cleanedExpectedAnswers = Object.entries(scoringData.expectedAnswers || {}).reduce((acc, [key, value]) => {
+          if (value !== '' && value !== null && value !== undefined) {
+            acc[key] = value;
+          }
+          return acc;
+        }, {});
+
+        // Clean fieldScores - remove entries with invalid values
+        const cleanedFieldScores = Object.entries(scoringData.fieldScores || {}).reduce((acc, [key, value]) => {
+          const points = parseFloat(value?.points);
+          const wrongPenalty = parseFloat(value?.wrongPenalty);
+          
+          // Only include if points is a valid number
+          if (!isNaN(points) && points !== 0) {
+            acc[key] = {
+              points,
+              wrongPenalty: !isNaN(wrongPenalty) ? wrongPenalty : 0
+            };
+          }
+          return acc;
+        }, {});
+
         const scoringPayload = {
           questionId,
           rubricId: scoringData.rubricId || null,
           scoringType: scoringData.scoringType,
           weight: parseFloat(scoringData.weight),
           maxScore: parseFloat(scoringData.maxScore),
-          expectedAnswers: scoringData.expectedAnswers,
+          expectedAnswers: Object.keys(cleanedExpectedAnswers).length > 0 ? cleanedExpectedAnswers : undefined,
           autoGradeConfig: scoringData.autoGradeConfig,
-          fieldScores: scoringData.fieldScores,
+          fieldScores: Object.keys(cleanedFieldScores).length > 0 ? cleanedFieldScores : undefined,
         };
 
         try {
-          if (isEditMode) {
+          if (scoringExists) {
             await questionScoringAPI.update(questionId, scoringPayload);
           } else {
             await questionScoringAPI.create(scoringPayload);
+            setScoringExists(true); // Mark as existing after successful creation
           }
         } catch (scoringError) {
           console.error('Error saving scoring config:', scoringError);

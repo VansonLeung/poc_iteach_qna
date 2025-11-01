@@ -8,183 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ChevronLeft, Save, Plus, Trash2, GripVertical, FolderOpen, FileQuestion, Edit, X, Award, Target } from 'lucide-react';
+import { ChevronLeft, Save, Plus, Trash2, FolderOpen, FileQuestion, Edit, X, Award, Target } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragOverlay,
-  useDroppable,
-  pointerWithin,
-  rectIntersection,
-  getFirstCollision,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-
-// Simple draggable element component
-function DraggableElement({ element, onDelete, onAddChild, onEdit, onEditSection, index, parentId = null }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: element.id,
-    data: {
-      type: 'element',
-      element: element,
-      parentId: parentId,
-      index: index,
-    },
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-  };
-
-  return (
-    <div ref={setNodeRef} style={style} className="mb-2">
-      <div className={`flex items-center gap-2 p-3 border rounded-md bg-card hover:bg-accent/50 transition-colors ${
-        element.element_type === 'section' ? 'border-blue-300 dark:border-blue-700' : ''
-      }`}>
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing">
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </div>
-
-        {element.element_type === 'section' ? (
-          <FolderOpen className="h-4 w-4 text-blue-500" />
-        ) : (
-          <FileQuestion className="h-4 w-4 text-green-500" />
-        )}
-
-        <div className="flex-1">
-          <p className="text-sm font-medium">
-            {element.element_type === 'section' ? element.title : element.question_title}
-          </p>
-          {element.description && (
-            <p className="text-xs text-muted-foreground">{element.description}</p>
-          )}
-          <div className="flex items-center gap-2 mt-1">
-            <p className="text-xs text-muted-foreground">
-              Order: {element.order_index} • {element.element_type}
-              {element.parent_element_id && ' • nested'}
-            </p>
-            {element.element_type === 'question' && element.rubric_title && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-primary/10 text-primary rounded-full border border-primary/20">
-                <Award className="h-3 w-3" />
-                {element.rubric_title}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex gap-1">
-          {element.element_type === 'section' && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onEditSection(element)}
-                title="Edit section"
-              >
-                <Edit className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onAddChild(element.id)}
-                title="Add element to this section"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-          {element.element_type === 'question' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onEdit(element)}
-              title="Edit question"
-            >
-              <Edit className="h-4 w-4" />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onDelete(element.id)}
-            className="text-destructive hover:text-destructive"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Render children for sections */}
-      {element.element_type === 'section' && (
-        <DroppableSection sectionId={element.id}>
-          {element.children && element.children.length > 0 ? (
-            element.children.map((child, idx) => (
-              <DraggableElement
-                key={child.id}
-                element={child}
-                index={idx}
-                parentId={element.id}
-                onDelete={onDelete}
-                onAddChild={onAddChild}
-                onEdit={onEdit}
-                onEditSection={onEditSection}
-              />
-            ))
-          ) : (
-            <div className="text-xs text-muted-foreground text-center py-4">
-              Drag elements here or click + to add
-            </div>
-          )}
-        </DroppableSection>
-      )}
-    </div>
-  );
-}
-
-// Droppable zone for sections
-function DroppableSection({ sectionId, children }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `section-${sectionId}`,
-    data: {
-      type: 'section',
-      sectionId: sectionId,
-    },
-  });
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`ml-8 mt-2 min-h-[80px] rounded-md p-2 transition-all ${
-        isOver
-          ? 'bg-blue-100 dark:bg-blue-900/30 border-2 border-blue-400 border-dashed'
-          : 'bg-muted/30 border-2 border-dashed border-transparent'
-      }`}
-    >
-      {children}
-    </div>
-  );
-}
+import { DraggableTree, findParentId, getSiblings } from '@/components/ui/draggable-tree';
 
 export default function ActivityBuilder() {
   const { id } = useParams();
@@ -204,21 +30,6 @@ export default function ActivityBuilder() {
   // Activity elements
   const [elements, setElements] = useState([]);
   const [loadingElements, setLoadingElements] = useState(false);
-
-  // Helper function to flatten all element IDs (including nested ones)
-  const getAllElementIds = (elements) => {
-    const ids = [];
-    const traverse = (items) => {
-      items.forEach((item) => {
-        ids.push(item.id);
-        if (item.children && item.children.length > 0) {
-          traverse(item.children);
-        }
-      });
-    };
-    traverse(elements);
-    return ids;
-  };
 
   // Element modal
   const [elementModalOpen, setElementModalOpen] = useState(false);
@@ -267,18 +78,6 @@ export default function ActivityBuilder() {
     fieldScores: {},
   });
   const [interactiveElements, setInteractiveElements] = useState([]);
-
-  // Drag and drop sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
 
   useEffect(() => {
     if (id) {
@@ -471,77 +270,16 @@ export default function ActivityBuilder() {
     setElementModalOpen(true);
   };
 
-  // Drag and drop handler - completely revamped
-  const handleDragEnd = async (event) => {
-    const { active, over } = event;
-
-    if (!over || active.id === over.id) {
-      return;
-    }
-
-    const activeId = active.id;
-    let overId = over.id;
-    const activeParentId = active.data.current?.parentId;
-    const overType = over.data.current?.type;
-    let overParentId = over.data.current?.parentId;
-    const overSectionId = over.data.current?.sectionId;
-
-    // Check if we're dragging over a question element AND it's from a different parent
-    // Only redirect if we're doing a cross-parent drag to prevent breaking reordering within the same parent
-    const overElement = findElementById(elements, overId);
-    if (overElement && overElement.element_type === 'question' && activeParentId !== overParentId) {
-      // Redirect to parent section or root (only for cross-parent drags)
-      if (overParentId) {
-        // Treat as dragging into the parent section
-        console.log('Detected cross-parent drag over question, redirecting to parent section:', overParentId);
-        overId = overParentId;
-        overParentId = findElementById(elements, overParentId)?.parent_element_id || null;
-      } else {
-        // Treat as dragging into root (reorder at root level)
-        console.log('Detected cross-parent drag over question at root, treating as root-level reorder');
-        overParentId = null;
-      }
-    }
-
-    console.log('Drag event:', {
-      activeId,
-      overId,
-      activeParentId,
-      overType,
-      overParentId,
-      overSectionId,
-    });
-
+  // Handle reordering from DraggableTree
+  const handleElementReorder = async (draggedElement, targetElement, position) => {
     try {
-      // Case 1: Dropping into a section droppable zone
-      if (overType === 'section') {
-        const section = findElementById(elements, overSectionId);
-        if (!section) {
-          console.error('Section not found:', overSectionId);
-          return;
-        }
+      // Case 1: Dropping INSIDE a section
+      if (position === 'inside' && targetElement.element_type === 'section') {
+        const newOrderIndex = targetElement.children?.length || 0;
 
-        // Prevent dropping section into itself
-        if (active.data.current?.element?.element_type === 'section') {
-          if (isDescendant(active.data.current.element, overSectionId)) {
-            toast({
-              variant: "destructive",
-              title: "Cannot move",
-              description: "Cannot move a section into itself.",
-            });
-            return;
-          }
-        }
-
-        console.log('Moving element into section:', {
-          elementId: activeId,
-          sectionId: overSectionId,
-          orderIndex: section.children?.length || 0,
-        });
-
-        await activityElementAPI.update(activeId, {
-          parentElementId: overSectionId,
-          orderIndex: section.children?.length || 0,
+        await activityElementAPI.update(draggedElement.id, {
+          parentElementId: targetElement.id,
+          orderIndex: newOrderIndex,
         });
 
         await fetchElements();
@@ -549,73 +287,215 @@ export default function ActivityBuilder() {
         toast({
           variant: "success",
           title: "Element moved",
-          description: `Moved into section "${section.title}".`,
+          description: `Moved into "${targetElement.title}".`,
         });
         return;
       }
 
-      // Case 2: Reordering within the same parent
-      if (activeParentId === overParentId) {
-        const siblings = activeParentId
-          ? findElementById(elements, activeParentId)?.children || []
+      // Case 2: Dropping BEFORE or AFTER
+      if (position === 'before' || position === 'after') {
+        const targetParentId = targetElement.parent_element_id;
+        const draggedParentId = draggedElement.parent_element_id;
+
+        // Get current siblings at target location (before any changes)
+        const targetSiblings = targetParentId
+          ? (elements.find(el => el.id === targetParentId)?.children || 
+             findElementInTree(elements, targetParentId)?.children || [])
           : elements;
 
-        const oldIndex = siblings.findIndex(el => el.id === activeId);
-        const newIndex = siblings.findIndex(el => el.id === overId);
-
-        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-
-        console.log('Reordering elements:', { oldIndex, newIndex });
-
-        const reordered = arrayMove(siblings, oldIndex, newIndex);
-
-        // Update all order indices
-        for (let i = 0; i < reordered.length; i++) {
-          await activityElementAPI.update(reordered[i].id, {
-            orderIndex: i,
-          });
+        const targetIndex = targetSiblings.findIndex(el => el.id === targetElement.id);
+        if (targetIndex === -1) {
+          console.error('Could not find target in siblings');
+          return;
         }
+
+        // Calculate new index based on position
+        let newIndex;
+        
+        if (draggedParentId === targetParentId) {
+          // Moving within same parent - need to account for removal
+          const draggedIndex = targetSiblings.findIndex(el => el.id === draggedElement.id);
+          
+          if (position === 'before') {
+            // Insert before target
+            // If dragging from above target, after removal target shifts down by 1
+            newIndex = draggedIndex < targetIndex ? targetIndex - 1 : targetIndex;
+          } else {
+            // Insert after target (position === 'after')
+            // If dragging from above target, after removal target shifts down by 1
+            newIndex = draggedIndex < targetIndex ? targetIndex : targetIndex + 1;
+          }
+        } else {
+          // Moving to different parent (no removal adjustment needed)
+          if (position === 'before') {
+            newIndex = targetIndex;
+          } else {
+            newIndex = targetIndex + 1;
+          }
+        }
+
+        // Step 1: Update all siblings' order indices first to make room
+        // Shift items to create a gap at the desired position
+        const updates = [];
+        
+        if (draggedParentId === targetParentId) {
+          // Same parent: shift items between old and new positions
+          const draggedIndex = targetSiblings.findIndex(el => el.id === draggedElement.id);
+          
+          if (draggedIndex < newIndex) {
+            // Moving down: shift items between [draggedIndex+1, newIndex] up by 1
+            for (let i = draggedIndex + 1; i <= newIndex && i < targetSiblings.length; i++) {
+              if (targetSiblings[i].id !== draggedElement.id) {
+                updates.push(
+                  activityElementAPI.update(targetSiblings[i].id, {
+                    orderIndex: i - 1,
+                  })
+                );
+              }
+            }
+          } else if (draggedIndex > newIndex) {
+            // Moving up: shift items between [newIndex, draggedIndex-1] down by 1
+            for (let i = newIndex; i < draggedIndex; i++) {
+              if (targetSiblings[i].id !== draggedElement.id) {
+                updates.push(
+                  activityElementAPI.update(targetSiblings[i].id, {
+                    orderIndex: i + 1,
+                  })
+                );
+              }
+            }
+          }
+        } else {
+          // Different parent: shift items in target parent at and after newIndex down by 1
+          for (let i = newIndex; i < targetSiblings.length; i++) {
+            updates.push(
+              activityElementAPI.update(targetSiblings[i].id, {
+                orderIndex: i + 1,
+              })
+            );
+          }
+        }
+
+        // Execute all updates in parallel
+        await Promise.all(updates);
+
+        // Step 2: Move the dragged element to new parent and position
+        await activityElementAPI.update(draggedElement.id, {
+          parentElementId: targetParentId,
+          orderIndex: newIndex,
+        });
+
+        // Step 3: Fetch fresh data
+        await fetchElements();
 
         await fetchElements();
 
         toast({
           variant: "success",
-          title: "Order updated",
-          description: "Elements reordered successfully.",
+          title: "Element moved",
+          description: "Element reordered successfully.",
         });
-      } else {
-        console.log('Different parents - no action taken:', { activeParentId, overParentId });
       }
     } catch (err) {
-      console.error('Drag error:', err);
-      const errorMsg = err.response?.data?.error || err.message || 'Failed to move element';
+      console.error('Reorder error:', err);
       toast({
         variant: "destructive",
         title: "Error",
-        description: errorMsg,
+        description: err.response?.data?.error || 'Failed to move element',
       });
+      await fetchElements();
     }
   };
 
-  // Helper to find element by ID
-  const findElementById = (elements, id) => {
-    for (const el of elements) {
-      if (el.id === id) return el;
-      if (el.children) {
-        const found = findElementById(el.children, id);
+  // Helper to find element in tree
+  const findElementInTree = (items, targetId) => {
+    for (const item of items) {
+      if (item.id === targetId) return item;
+      if (item.children) {
+        const found = findElementInTree(item.children, targetId);
         if (found) return found;
       }
     }
     return null;
   };
 
-  // Helper to check if element is descendant
-  const isDescendant = (parent, childId) => {
-    if (parent.id === childId) return true;
-    if (parent.children) {
-      return parent.children.some(child => isDescendant(child, childId));
-    }
-    return false;
+  // Render function for DraggableTree
+  const renderElement = (element, { dragHandleProps, level }) => {
+    return (
+      <div className={`flex items-center gap-2 p-2 border rounded bg-card hover:bg-accent/30 transition-colors mb-1 ${
+        element.element_type === 'section' ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-950/50' : ''
+      }`}>
+        <div {...dragHandleProps} />
+
+        {element.element_type === 'section' ? (
+          <FolderOpen className="h-4 w-4 text-blue-500" />
+        ) : (
+          <FileQuestion className="h-4 w-4 text-green-500" />
+        )}
+
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">
+            {element.element_type === 'section' ? element.title : element.question_title}
+          </p>
+          {element.description && (
+            <p className="text-xs text-muted-foreground truncate">{element.description}</p>
+          )}
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-xs text-muted-foreground">
+              #{element.order_index} • {element.element_type}
+              {element.parent_element_id && ' • nested'}
+            </p>
+            {element.element_type === 'question' && element.rubric_title && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs bg-primary/10 text-primary rounded-full border border-primary/20">
+                <Award className="h-3 w-3" />
+                {element.rubric_title}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-1">
+          {element.element_type === 'section' && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleEditSection(element)}
+                title="Edit section"
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleOpenAddElement(element.id)}
+                title="Add element to this section"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+          {element.element_type === 'question' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleEditQuestion(element)}
+              title="Edit question"
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleDeleteElement(element.id)}
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    );
   };
 
   // Parse interactive elements from HTML
@@ -851,6 +731,21 @@ export default function ActivityBuilder() {
         // Save scoring configuration for existing question
         if (scoringConfig.rubricId || scoringConfig.scoringType !== 'manual' || scoringConfig.weight !== 1.0 || Object.keys(scoringConfig.expectedAnswers).length > 0) {
           try {
+            // Clean fieldScores - remove entries with invalid values
+            const cleanedFieldScores = Object.entries(scoringConfig.fieldScores || {}).reduce((acc, [key, value]) => {
+              const points = parseFloat(value?.points);
+              const wrongPenalty = parseFloat(value?.wrongPenalty);
+              
+              // Only include if points is a valid number
+              if (!isNaN(points) && points !== 0) {
+                acc[key] = {
+                  points,
+                  wrongPenalty: !isNaN(wrongPenalty) ? wrongPenalty : 0
+                };
+              }
+              return acc;
+            }, {});
+
             const scoringPayload = {
               questionId: editingQuestion.id,
               rubricId: scoringConfig.rubricId || null,
@@ -859,7 +754,7 @@ export default function ActivityBuilder() {
               maxScore: scoringConfig.maxScore,
               expectedAnswers: Object.keys(scoringConfig.expectedAnswers).length > 0 ? scoringConfig.expectedAnswers : null,
               autoGradeConfig: scoringConfig.autoGradeConfig,
-              fieldScores: scoringConfig.fieldScores,
+              fieldScores: Object.keys(cleanedFieldScores).length > 0 ? cleanedFieldScores : undefined,
             };
 
             await questionScoringAPI.create(scoringPayload);
@@ -895,6 +790,21 @@ export default function ActivityBuilder() {
         // Save scoring configuration for new question (after question is created)
         if (scoringConfig.rubricId || scoringConfig.scoringType !== 'manual' || scoringConfig.weight !== 1.0 || Object.keys(scoringConfig.expectedAnswers).length > 0) {
           try {
+            // Clean fieldScores - remove entries with invalid values
+            const cleanedFieldScores = Object.entries(scoringConfig.fieldScores || {}).reduce((acc, [key, value]) => {
+              const points = parseFloat(value?.points);
+              const wrongPenalty = parseFloat(value?.wrongPenalty);
+              
+              // Only include if points is a valid number
+              if (!isNaN(points) && points !== 0) {
+                acc[key] = {
+                  points,
+                  wrongPenalty: !isNaN(wrongPenalty) ? wrongPenalty : 0
+                };
+              }
+              return acc;
+            }, {});
+
             const scoringPayload = {
               questionId: questionId,
               rubricId: scoringConfig.rubricId || null,
@@ -903,7 +813,7 @@ export default function ActivityBuilder() {
               maxScore: scoringConfig.maxScore,
               expectedAnswers: Object.keys(scoringConfig.expectedAnswers).length > 0 ? scoringConfig.expectedAnswers : null,
               autoGradeConfig: scoringConfig.autoGradeConfig,
-              fieldScores: scoringConfig.fieldScores,
+              fieldScores: Object.keys(cleanedFieldScores).length > 0 ? cleanedFieldScores : undefined,
             };
 
             await questionScoringAPI.create(scoringPayload);
@@ -1087,31 +997,15 @@ export default function ActivityBuilder() {
                   No elements yet. Click "Add Element" to get started.
                 </p>
               ) : (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={getAllElementIds(elements)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="space-y-2">
-                      {elements.map((element, index) => (
-                        <DraggableElement
-                          key={element.id}
-                          element={element}
-                          index={index}
-                          parentId={null}
-                          onDelete={handleDeleteElement}
-                          onAddChild={handleOpenAddElement}
-                          onEdit={handleEditQuestion}
-                          onEditSection={handleEditSection}
-                        />
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
+                <DraggableTree
+                  items={elements}
+                  onReorder={handleElementReorder}
+                  renderItem={renderElement}
+                  canHaveChildren={(item) => item.element_type === 'section'}
+                  childrenKey="children"
+                  getId={(item) => item.id}
+                  className="space-y-1"
+                />
               )}
             </CardContent>
           </Card>

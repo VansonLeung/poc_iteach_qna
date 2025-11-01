@@ -35,13 +35,15 @@ router.post(
   [
     body('title').trim().notEmpty().withMessage('Title is required'),
     body('bodyHtml').notEmpty().withMessage('Question body is required'),
-    body('parentQuestionId').optional().isUUID(),
+    body('parentQuestionId').optional({ nullable: true, checkFalsy: true }).isUUID(),
     body('tags').optional().isArray()
   ],
   async (req, res, next) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        console.log('[VALIDATION ERROR]', JSON.stringify(errors.array(), null, 2));
+        console.log('[REQUEST BODY]', JSON.stringify(req.body, null, 2));
         return res.status(400).json({ errors: errors.array() });
       }
 
@@ -110,7 +112,7 @@ router.put(
   [
     body('title').optional().trim().notEmpty(),
     body('bodyHtml').optional().notEmpty(),
-    body('parentQuestionId').optional().isUUID(),
+    body('parentQuestionId').optional({ nullable: true, checkFalsy: true }).isUUID(),
     body('tags').optional().isArray()
   ],
   async (req, res, next) => {

@@ -16,7 +16,7 @@ router.post(
   authorize('admin', 'teacher'),
   [
     body('questionId').isUUID().withMessage('Valid question ID required'),
-    body('rubricId').optional().isUUID(),
+    body('rubricId').optional({ nullable: true, checkFalsy: true }).isUUID(),
     body('scoringType').isIn(['auto', 'manual', 'hybrid']).withMessage('Invalid scoring type'),
     body('weight').optional().isFloat({ min: 0 }).withMessage('Weight must be a positive number'),
     body('maxScore').optional().isFloat({ min: 0 }).withMessage('Max score must be a positive number'),
@@ -28,6 +28,8 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        console.log('[SCORING VALIDATION ERROR]', JSON.stringify(errors.array(), null, 2));
+        console.log('[SCORING REQUEST BODY]', JSON.stringify(req.body, null, 2));
         return res.status(400).json({ errors: errors.array() });
       }
 
@@ -144,7 +146,7 @@ router.put(
   authenticate,
   authorize('admin', 'teacher'),
   [
-    body('rubricId').optional().isUUID(),
+    body('rubricId').optional({ nullable: true, checkFalsy: true }).isUUID(),
     body('scoringType').optional().isIn(['auto', 'manual', 'hybrid']),
     body('weight').optional().isFloat({ min: 0 }),
     body('maxScore').optional().isFloat({ min: 0 }),
@@ -156,6 +158,8 @@ router.put(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        console.log('[SCORING PUT VALIDATION ERROR]', JSON.stringify(errors.array(), null, 2));
+        console.log('[SCORING PUT REQUEST BODY]', JSON.stringify(req.body, null, 2));
         return res.status(400).json({ errors: errors.array() });
       }
 
