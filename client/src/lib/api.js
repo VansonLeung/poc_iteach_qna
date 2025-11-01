@@ -53,6 +53,7 @@ export const activityAPI = {
   update: (id, data) => api.put(`/activities/${id}`, data),
   archive: (id) => api.delete(`/activities/${id}/archive`),
   getVersions: (id) => api.get(`/activities/${id}/versions`),
+  getReport: (id, params) => api.get(`/activities/${id}/report`, { params }),
 };
 
 // Activity Element APIs
@@ -82,6 +83,18 @@ export const submissionAPI = {
   update: (id, data) => api.put(`/submissions/${id}`, data),
   archive: (id) => api.delete(`/submissions/${id}/archive`),
   getVersions: (id) => api.get(`/submissions/${id}/versions`),
+  // Scoring APIs
+  getScores: (id) => api.get(`/submissions/${id}/scores`),
+  autoGrade: (id) => api.post(`/submissions/${id}/auto-grade`),
+  calculateScore: (id) => api.post(`/submissions/${id}/calculate-score`),
+  // Grading APIs
+  getForGrading: (id) => api.get(`/submissions/${id}/grading`),
+  gradeQuestion: (submissionId, answerId, gradeData) =>
+    api.post(`/submissions/${submissionId}/answers/${answerId}/grade`, gradeData),
+  updateGrade: (submissionId, answerId, gradeData) =>
+    api.put(`/submissions/${submissionId}/answers/${answerId}/grade`, gradeData),
+  gradeAll: (id, grades) => api.post(`/submissions/${id}/grade-all`, { grades }),
+  updateStatus: (id, status) => api.patch(`/submissions/${id}/status`, { status }),
 };
 
 // Submission Answer APIs

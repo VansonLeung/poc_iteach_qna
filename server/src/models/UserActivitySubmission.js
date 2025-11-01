@@ -24,7 +24,7 @@ const UserActivitySubmission = sequelize.define('UserActivitySubmission', {
     },
   },
   status: {
-    type: DataTypes.ENUM('in-progress', 'submitted', 'archived'),
+    type: DataTypes.ENUM('in-progress', 'submitted', 'graded', 'archived'),
     allowNull: false,
     defaultValue: 'in-progress',
   },
@@ -47,6 +47,34 @@ const UserActivitySubmission = sequelize.define('UserActivitySubmission', {
   updated_by: {
     type: DataTypes.UUID,
     allowNull: false,
+    references: {
+      model: 'users',
+      key: 'id',
+    },
+  },
+  // Scoring fields
+  total_score: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    defaultValue: null,
+  },
+  max_possible_score: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    defaultValue: null,
+  },
+  percentage: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    defaultValue: null,
+  },
+  graded_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  graded_by: {
+    type: DataTypes.UUID,
+    allowNull: true,
     references: {
       model: 'users',
       key: 'id',

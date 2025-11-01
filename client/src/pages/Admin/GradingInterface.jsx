@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { ChevronLeft, Save, Award, User, FileText, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { submissionAPI, activityAPI } from '@/lib/api';
+import StudentAnswerDisplay from '@/components/Grading/StudentAnswerDisplay';
 
 export default function GradingInterface() {
   const { activityId } = useParams();
@@ -33,6 +35,7 @@ export default function GradingInterface() {
 
   const [filterStatus, setFilterStatus] = useState('all');
   const [saving, setSaving] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   useEffect(() => {
     if (activityId) {
@@ -43,35 +46,32 @@ export default function GradingInterface() {
   const fetchActivityAndSubmissions = async () => {
     setLoading(true);
     try {
-      // TODO: Replace with actual API calls
-      // const activityResponse = await activityAPI.getById(activityId);
-      // const submissionsResponse = await submissionAPI.getByActivity(activityId);
+      // Fetch activity details
+      const activityResponse = await activityAPI.getById(activityId);
+      setActivity(activityResponse.data.activity);
 
-      // Mock data for demonstration
-      setActivity({
-        id: activityId,
-        title: 'Introduction to JavaScript',
-        description: 'Sample activity for grading'
+      // Fetch submissions for this activity
+      const submissionsResponse = await submissionAPI.getAll({
+        activityId,
+        limit: 100
       });
 
-      setSubmissions([
-        {
-          id: '1',
-          user: { id: 'u1', firstName: 'John', lastName: 'Student', email: 'john@example.com' },
-          status: 'submitted',
-          submittedAt: '2025-10-30T10:00:00Z',
-          totalScore: null,
-          maxPossibleScore: 100
+      // Map to expected format
+      const mappedSubmissions = submissionsResponse.data.submissions.map(sub => ({
+        id: sub.id,
+        user: {
+          id: sub.user_id,
+          firstName: sub.first_name || '',
+          lastName: sub.last_name || '',
+          email: sub.user_email || ''
         },
-        {
-          id: '2',
-          user: { id: 'u2', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.com' },
-          status: 'graded',
-          submittedAt: '2025-10-29T15:30:00Z',
-          totalScore: 85,
-          maxPossibleScore: 100
-        }
-      ]);
+        status: sub.status,
+        submittedAt: sub.submitted_at,
+        totalScore: sub.total_score,
+        maxPossibleScore: sub.max_possible_score
+      }));
+
+      setSubmissions(mappedSubmissions);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({
@@ -89,49 +89,47 @@ export default function GradingInterface() {
     setLoading(true);
 
     try {
-      // TODO: Replace with actual API calls
-      // const responsesData = await responseAPI.getBySubmission(submission.id);
-      // const scoresData = await scoresAPI.getBySubmission(submission.id);
-      // const questionsData = await activityAPI.getQuestions(activityId);
+      // Fetch submission grading data
+      const gradingResponse = await submissionAPI.getForGrading(submission.id);
+      const { questions: questionData } = gradingResponse.data;
 
-      // Mock data
-      setQuestions([
-        {
-          id: 'q1',
-          title: 'What is JavaScript?',
-          bodyHtml: '<p>Explain JavaScript in your own words.</p>',
-          scoring: {
-            rubricId: 'r1',
-            maxScore: 40,
-            scoringType: 'manual'
-          }
-        },
-        {
-          id: 'q2',
-          title: 'JavaScript Data Types',
-          bodyHtml: '<p>Select all valid JavaScript data types.</p>',
-          scoring: {
-            rubricId: 'r2',
-            maxScore: 10,
-            scoringType: 'auto'
-          }
+      // Map questions
+      const mappedQuestions = questionData.map(q => ({
+        id: q.questionId,
+        answerId: q.answerId,
+        title: q.question?.title || 'Untitled Question',
+        bodyHtml: q.question?.body_html || '',
+        scoring: {
+          rubricId: q.question?.scoring?.rubric_id,
+          maxScore: q.question?.scoring?.max_score || 10,
+          scoringType: q.question?.scoring?.scoring_type || 'manual',
+          expectedAnswers: q.question?.scoring?.expected_answers
         }
-      ]);
+      }));
 
-      setResponses({
-        q1: { answer: 'JavaScript is a programming language for web development...' },
-        q2: { selected: ['string', 'number', 'boolean'] }
+      // Map responses by question ID
+      const responsesData = {};
+      questionData.forEach(q => {
+        responsesData[q.questionId] = q.response;
       });
 
-      setScores({
-        q2: {
-          score: 10,
-          maxScore: 10,
-          feedback: 'All correct!',
-          isAutoGraded: true
+      // Map scores by question ID
+      const scoresData = {};
+      questionData.forEach(q => {
+        if (q.score) {
+          scoresData[q.questionId] = {
+            score: q.score.score,
+            maxScore: q.score.maxScore,
+            feedback: q.score.feedback || '',
+            criteriaScores: q.score.criteriaScores,
+            isAutoGraded: q.score.isAutoGraded
+          };
         }
       });
 
+      setQuestions(mappedQuestions);
+      setResponses(responsesData);
+      setScores(scoresData);
       setFeedbackForm({});
     } catch (error) {
       console.error('Error loading submission:', error);
@@ -171,26 +169,121 @@ export default function GradingInterface() {
   const handleSaveGrades = async () => {
     setSaving(true);
     try {
-      // TODO: Implement actual API call
-      // await scoresAPI.saveGrades(selectedSubmission.id, scores);
+      // Build grades array
+      const grades = questions.map(question => {
+        const score = scores[question.id];
+
+        // Skip if: no score entered, auto-graded, or no answer submitted
+        if (!score || score.isAutoGraded || !question.answerId) return null;
+
+        return {
+          answerId: question.answerId,
+          score: parseFloat(score.score),
+          maxScore: parseFloat(score.maxScore || question.scoring.maxScore),
+          feedback: score.feedback || '',
+          criteriaScores: score.criteriaScores || null,
+          rubricId: question.scoring.rubricId || null
+        };
+      }).filter(Boolean); // Remove nulls
+
+      if (grades.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'No Grades',
+          description: 'No manual grades to save'
+        });
+        setSaving(false);
+        return;
+      }
+
+      // Save all grades
+      await submissionAPI.gradeAll(selectedSubmission.id, grades);
+
+      // Calculate total score for the submission
+      try {
+        await submissionAPI.calculateScore(selectedSubmission.id);
+      } catch (calcError) {
+        console.error('Error calculating score:', calcError);
+        // Continue even if score calculation fails
+      }
 
       toast({
-        variant: 'success',
         title: 'Grades Saved',
-        description: 'Student grades have been saved successfully'
+        description: `Successfully graded ${grades.length} question(s)`
       });
 
       // Refresh submissions list
       await fetchActivityAndSubmissions();
+
+      // Reload current submission
+      await handleSelectSubmission(selectedSubmission);
     } catch (error) {
       console.error('Error saving grades:', error);
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to save grades'
+        description: error.response?.data?.error || 'Failed to save grades'
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleMarkAsGraded = async () => {
+    if (!selectedSubmission) return;
+
+    setUpdatingStatus(true);
+    try {
+      await submissionAPI.updateStatus(selectedSubmission.id, 'graded');
+
+      toast({
+        title: 'Status Updated',
+        description: 'Submission marked as graded'
+      });
+
+      // Refresh submissions list
+      await fetchActivityAndSubmissions();
+
+      // Reload current submission
+      await handleSelectSubmission(selectedSubmission);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.error || 'Failed to update status'
+      });
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  const handleRevertToSubmitted = async () => {
+    if (!selectedSubmission) return;
+
+    setUpdatingStatus(true);
+    try {
+      await submissionAPI.updateStatus(selectedSubmission.id, 'submitted');
+
+      toast({
+        title: 'Status Updated',
+        description: 'Submission reverted to submitted'
+      });
+
+      // Refresh submissions list
+      await fetchActivityAndSubmissions();
+
+      // Reload current submission
+      await handleSelectSubmission(selectedSubmission);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.error || 'Failed to update status'
+      });
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -287,7 +380,11 @@ export default function GradingInterface() {
                   <div className="text-xs text-muted-foreground">
                     {submission.status === 'graded' && (
                       <span className="font-medium">
-                        Score: {submission.totalScore}/{submission.maxPossibleScore}
+                        {(submission.totalScore != null && submission.maxPossibleScore != null) ? (
+                          <>Score: {submission.totalScore}/{submission.maxPossibleScore}</>
+                        ) : (
+                          <>Graded (scores pending)</>
+                        )}
                       </span>
                     )}
                     {submission.status === 'submitted' && (
@@ -295,7 +392,7 @@ export default function GradingInterface() {
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    Submitted: {new Date(submission.submittedAt).toLocaleDateString()}
+                    Submitted: {new Date(submission.submittedAt).toLocaleString()}
                   </div>
                 </div>
               ))}
@@ -324,38 +421,40 @@ export default function GradingInterface() {
                       const response = responses[question.id];
                       const score = scores[question.id] || {};
                       const isAutoGraded = score.isAutoGraded;
+                      const isUnanswered = !question.answerId;
 
                       return (
-                        <Card key={question.id} className="border-2">
+                        <Card key={question.id} className={`border-2 ${isUnanswered ? 'opacity-60 bg-gray-50' : ''}`}>
                           <CardHeader>
                             <CardTitle className="text-lg">
                               Question {index + 1}: {question.title}
                             </CardTitle>
-                            {isAutoGraded && (
-                              <div className="flex items-center gap-2 text-sm text-green-600">
-                                <CheckCircle className="h-4 w-4" />
-                                Auto-graded
-                              </div>
-                            )}
+                            <div className="flex items-center gap-4">
+                              {isUnanswered && (
+                                <div className="flex items-center gap-2 text-sm text-gray-500">
+                                  <XCircle className="h-4 w-4" />
+                                  Not answered
+                                </div>
+                              )}
+                              {isAutoGraded && (
+                                <div className="flex items-center gap-2 text-sm text-green-600">
+                                  <CheckCircle className="h-4 w-4" />
+                                  Auto-graded
+                                </div>
+                              )}
+                            </div>
                           </CardHeader>
                           <CardContent className="space-y-4">
-                            {/* Question Content */}
-                            <div
-                              className="p-4 bg-muted rounded-md"
-                              dangerouslySetInnerHTML={{ __html: question.bodyHtml }}
-                            />
-
                             {/* Student Response */}
                             <div>
                               <Label className="text-base font-semibold">Student Response:</Label>
-                              <div className="mt-2 p-4 border rounded-md bg-background">
-                                {typeof response === 'object' ? (
-                                  <pre className="whitespace-pre-wrap text-sm">
-                                    {JSON.stringify(response, null, 2)}
-                                  </pre>
-                                ) : (
-                                  <p className="text-sm">{response || 'No response provided'}</p>
-                                )}
+                              <div className="mt-2">
+                                <StudentAnswerDisplay
+                                  response={response}
+                                  expectedAnswers={question.scoring?.expectedAnswers}
+                                  isUnanswered={isUnanswered}
+                                  questionBodyHtml={question.bodyHtml}
+                                />
                               </div>
                             </div>
 
@@ -371,7 +470,7 @@ export default function GradingInterface() {
                                   max={question.scoring.maxScore}
                                   value={score.score || ''}
                                   onChange={(e) => handleScoreChange(question.id, 'score', parseFloat(e.target.value))}
-                                  disabled={isAutoGraded}
+                                  disabled={isAutoGraded || isUnanswered}
                                   placeholder="0"
                                 />
                               </div>
@@ -393,8 +492,8 @@ export default function GradingInterface() {
                                 value={score.feedback || ''}
                                 onChange={(e) => handleScoreChange(question.id, 'feedback', e.target.value)}
                                 className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                placeholder="Provide feedback for the student..."
-                                disabled={isAutoGraded}
+                                placeholder={isUnanswered ? "Cannot grade unanswered question" : "Provide feedback for the student..."}
+                                disabled={isAutoGraded || isUnanswered}
                               />
                             </div>
 
@@ -420,6 +519,26 @@ export default function GradingInterface() {
                         <Save className="h-4 w-4 mr-2" />
                         {saving ? 'Saving...' : 'Save Grades'}
                       </Button>
+                      {selectedSubmission.status === 'submitted' && (
+                        <Button
+                          onClick={handleMarkAsGraded}
+                          disabled={updatingStatus}
+                          variant="default"
+                        >
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          {updatingStatus ? 'Updating...' : 'Mark as Graded'}
+                        </Button>
+                      )}
+                      {selectedSubmission.status === 'graded' && (
+                        <Button
+                          onClick={handleRevertToSubmitted}
+                          disabled={updatingStatus}
+                          variant="secondary"
+                        >
+                          <XCircle className="h-4 w-4 mr-2" />
+                          {updatingStatus ? 'Updating...' : 'Revert to Submitted'}
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         onClick={() => setSelectedSubmission(null)}

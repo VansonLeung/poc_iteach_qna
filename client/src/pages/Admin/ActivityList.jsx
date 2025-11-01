@@ -4,7 +4,7 @@ import { activityAPI } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Plus, Edit, Archive, Search } from 'lucide-react';
+import { Plus, Edit, Archive, Search, ClipboardCheck } from 'lucide-react';
 
 export default function ActivityList() {
   const navigate = useNavigate();
@@ -105,6 +105,14 @@ export default function ActivityList() {
                     </div>
                   </div>
                   <div className="flex items-center space-x-2 ml-4">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/admin/activities/${activity.id}/grade`)}
+                    >
+                      <ClipboardCheck className="mr-2 h-4 w-4" />
+                      Grade
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

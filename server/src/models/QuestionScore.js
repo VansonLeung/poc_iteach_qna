@@ -9,18 +9,38 @@ const QuestionScore = sequelize.define('QuestionScore', {
   },
   response_id: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,  // Made nullable to support both systems
     references: {
       model: 'question_responses',
       key: 'id',
     },
     onDelete: 'CASCADE',
   },
+  // New field for UserActivitySubmissionAnswer
+  answer_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'user_activity_submission_answers',
+      key: 'id',
+    },
+    onDelete: 'CASCADE',
+  },
   submission_id: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,  // Made nullable to support both systems
     references: {
       model: 'activity_submissions',
+      key: 'id',
+    },
+    onDelete: 'CASCADE',
+  },
+  // New field for UserActivitySubmission
+  user_submission_id: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'user_activity_submissions',
       key: 'id',
     },
     onDelete: 'CASCADE',

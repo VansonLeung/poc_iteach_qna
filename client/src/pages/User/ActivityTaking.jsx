@@ -52,23 +52,43 @@ export default function ActivityTaking() {
 
         // Load existing answers
         const answersRes = await submissionAnswerAPI.getAll({ submissionId: sub.id });
-        console.log('Loaded answers:', answersRes.data.answers?.length || 0);
+        console.log('📥 Loading answers for submission:', sub.id);
+        console.log('📥 Raw answers from API:', answersRes.data.answers);
+
         const answersMap = {};
         const answerIdsMap = {};
         answersRes.data.answers?.forEach(ans => {
-          // Parse the answer_data JSON and extract the value
+          console.log('📄 Processing answer:', ans.id, 'element_uuid:', ans.element_uuid);
+          console.log('📄 Raw answer_data:', ans.answer_data);
+
+          // Parse the answer_data JSON
           let parsedAnswer;
           try {
-            parsedAnswer = typeof ans.answer_data === 'string' 
-              ? JSON.parse(ans.answer_data) 
+            parsedAnswer = typeof ans.answer_data === 'string'
+              ? JSON.parse(ans.answer_data)
               : ans.answer_data;
-            answersMap[ans.element_uuid] = parsedAnswer.value || parsedAnswer;
+
+            console.log('📄 Parsed answer_data:', parsedAnswer);
+
+            // Universal format: {"field-name-or-uuid": value, "field2": value2, ...}
+            if (parsedAnswer && typeof parsedAnswer === 'object') {
+              // Merge all field answers into the main answersMap
+              Object.entries(parsedAnswer).forEach(([fieldIdentifier, value]) => {
+                console.log('  ✓ Mapping field:', fieldIdentifier, '→', value);
+                answersMap[fieldIdentifier] = value;
+              });
+            }
           } catch (e) {
             console.error('Error parsing answer_data:', e);
             answersMap[ans.element_uuid] = ans.answer_data;
           }
+          // Track answer ID by element_uuid (question ID)
           answerIdsMap[ans.element_uuid] = ans.id;
         });
+
+        console.log('📥 Final answersMap:', answersMap);
+        console.log('📥 Final answerIdsMap:', answerIdsMap);
+
         setAnswers(answersMap);
         setSavedAnswerIds(answerIdsMap);
       } else {
@@ -112,25 +132,28 @@ export default function ActivityTaking() {
       }
 
       const element = e.target;
-      // Use data-element-uuid as the field identifier
-      const fieldName = element.getAttribute('data-element-uuid');
+
+      // For text/textarea/select, prefer 'name' over 'data-element-uuid'
+      // For radio/checkbox, use 'name' as the group identifier
+      const fieldName = element.getAttribute('name') || element.getAttribute('data-element-uuid');
 
       if (!fieldName) return;
 
       let value;
       if (element.type === 'checkbox') {
-        // For checkboxes, collect all checked values with the same data-element-uuid
-        const allCheckboxes = container.querySelectorAll(`input[type="checkbox"][data-element-uuid="${fieldName}"]`);
+        // Collect all checked values in the checkbox group as an array
+        const allCheckboxes = container.querySelectorAll(`input[type="checkbox"][name="${fieldName}"]`);
         value = Array.from(allCheckboxes)
           .filter(cb => cb.checked)
           .map(cb => cb.value);
       } else if (element.type === 'radio') {
+        // Store the selected radio value
         value = element.value;
       } else {
+        // Text, textarea, select, etc.
         value = element.value;
       }
 
-      console.log('Answer updated:', fieldName, value);
       setAnswers(prev => ({ ...prev, [fieldName]: value }));
     };
 
@@ -147,19 +170,39 @@ export default function ActivityTaking() {
     });
 
     // Restore saved answers
-    inputs.forEach(input => {
-      const fieldName = input.getAttribute('data-element-uuid');
-      if (fieldName && answers[fieldName] !== undefined) {
-        const savedValue = answers[fieldName];
-        const elementType = input.getAttribute('data-element-type');
+    console.log('🔄 Restoring answers to inputs, total inputs:', inputs.length);
+    console.log('🔄 Available answers:', answers);
 
+    inputs.forEach(input => {
+      // Use 'name' attribute as the field identifier (for grouping)
+      const fieldName = input.getAttribute('name') || input.getAttribute('data-element-uuid');
+      const savedValue = answers[fieldName];
+      const elementType = input.getAttribute('data-element-type');
+
+      console.log('🔄 Input:', {
+        type: input.type,
+        elementType,
+        fieldName,
+        savedValue,
+        hasValue: savedValue !== undefined
+      });
+
+      if (fieldName && savedValue !== undefined) {
         if (elementType === 'checkbox' || input.type === 'checkbox') {
-          input.checked = Array.isArray(savedValue) ? savedValue.includes(input.value) : savedValue === input.value;
+          // Array value for checkbox group - check if this input's value is in the array
+          input.checked = Array.isArray(savedValue) && savedValue.includes(input.value);
+          console.log('  ✓ Set checkbox to:', input.checked, '(value in array:', savedValue, ')');
         } else if (elementType === 'radio' || input.type === 'radio') {
+          // String value for radio - check if this input's value matches
           input.checked = input.value === savedValue;
+          console.log('  ✓ Set radio to:', input.checked, '(matches:', savedValue, ')');
         } else {
+          // String value for text, textarea, select, etc.
           input.value = savedValue;
+          console.log('  ✓ Set text value to:', savedValue);
         }
+      } else {
+        console.log('  ⚠️ No saved value found for field:', fieldName);
       }
     });
 
@@ -176,47 +219,79 @@ export default function ActivityTaking() {
 
     setSaving(true);
     try {
-      // Save each answer
-      for (const [elementUuid, answerValue] of Object.entries(answers)) {
-        try {
-          // Find the element to get its question_id
-          const element = elements.find(el => el.id === elementUuid);
-          if (!element) {
-            console.error(`Element not found for UUID: ${elementUuid}`);
-            continue;
-          }
+      // Get the current question's HTML to find all field UUIDs
+      const container = questionBodyRef.current;
+      if (!container) {
+        console.error('Question container not found');
+        return;
+      }
 
-          const answerData = { value: answerValue };
-          const existingAnswerId = savedAnswerIds[elementUuid];
+      const inputs = container.querySelectorAll('[data-element-uuid]');
+      const currentQuestionId = currentElement?.question_id;
+      const currentElementId = currentElement?.id;
 
-          if (existingAnswerId) {
-            // Update existing answer
-            await submissionAnswerAPI.update(existingAnswerId, {
-              answerData: JSON.stringify(answerData)
-            });
-          } else {
-            // Create new answer
-            const response = await submissionAnswerAPI.create({
-              submissionId: submission.id,
-              questionId: element.question_id,
-              elementUuid,
-              answerData: JSON.stringify(answerData)
-            });
-            // Track the new answer ID
-            setSavedAnswerIds(prev => ({
-              ...prev,
-              [elementUuid]: response.data.answer.id
-            }));
-          }
-        } catch (error) {
-          console.error(`Error saving answer for ${elementUuid}:`, error);
+      if (!currentQuestionId || !currentElementId) {
+        console.error('Current element not found');
+        return;
+      }
+
+      // Build answer data - collect all field values
+      const answerData = {};
+      const processedFields = new Set(); // Track which fields we've already processed
+
+      inputs.forEach(input => {
+        // Use 'name' attribute as field identifier
+        const fieldIdentifier = input.getAttribute('name') || input.getAttribute('data-element-uuid');
+
+        // Skip if we've already processed this field (avoid duplicates for checkbox/radio groups)
+        if (processedFields.has(fieldIdentifier)) return;
+        processedFields.add(fieldIdentifier);
+
+        const fieldValue = answers[fieldIdentifier];
+
+        if (fieldIdentifier && fieldValue !== undefined) {
+          answerData[fieldIdentifier] = fieldValue;
         }
+      });
+
+      // Skip if no answers for this question
+      if (Object.keys(answerData).length === 0) {
+        toast({
+          variant: "default",
+          title: "No changes to save",
+          description: "Please answer the question before saving.",
+        });
+        setSaving(false);
+        return;
+      }
+
+      // Check if we have an existing answer for this question
+      const existingAnswerId = savedAnswerIds[currentElementId];
+
+      if (existingAnswerId) {
+        // Update existing answer
+        await submissionAnswerAPI.update(existingAnswerId, {
+          answerData: JSON.stringify(answerData)
+        });
+      } else {
+        // Create new answer
+        const response = await submissionAnswerAPI.create({
+          submissionId: submission.id,
+          questionId: currentQuestionId,
+          elementUuid: currentElementId,
+          answerData: JSON.stringify(answerData)
+        });
+        // Track the new answer ID
+        setSavedAnswerIds(prev => ({
+          ...prev,
+          [currentElementId]: response.data.answer.id
+        }));
       }
 
       toast({
         variant: "success",
         title: "Progress saved",
-        description: "Your answers have been saved successfully.",
+        description: "Your answer has been saved successfully.",
       });
     } catch (error) {
       console.error('Error saving answers:', error);
@@ -230,12 +305,80 @@ export default function ActivityTaking() {
     }
   };
 
+  const saveCurrentQuestionAnswers = async () => {
+    // Save the current question's answers silently (without toast notifications)
+    if (!submission || !questionBodyRef.current) return;
+
+    try {
+      const container = questionBodyRef.current;
+      const inputs = container.querySelectorAll('[data-element-uuid]');
+      const currentQuestionId = currentElement?.question_id;
+      const currentElementId = currentElement?.id;
+
+      if (!currentQuestionId || !currentElementId) return;
+
+      // Build answer data
+      const answerData = {};
+      inputs.forEach(input => {
+        let fieldIdentifier;
+        if (input.type === 'radio' || input.type === 'checkbox') {
+          fieldIdentifier = input.getAttribute('data-element-uuid');
+        } else {
+          fieldIdentifier = input.getAttribute('name') || input.getAttribute('data-element-uuid');
+        }
+
+        const fieldValue = answers[fieldIdentifier];
+        if (fieldIdentifier && fieldValue !== undefined) {
+          answerData[fieldIdentifier] = fieldValue;
+        }
+      });
+
+      // Skip if no answers
+      if (Object.keys(answerData).length === 0) return;
+
+      // Save or update
+      const existingAnswerId = savedAnswerIds[currentElementId];
+      if (existingAnswerId) {
+        await submissionAnswerAPI.update(existingAnswerId, {
+          answerData: JSON.stringify(answerData)
+        });
+      } else {
+        const response = await submissionAnswerAPI.create({
+          submissionId: submission.id,
+          questionId: currentQuestionId,
+          elementUuid: currentElementId,
+          answerData: JSON.stringify(answerData)
+        });
+        setSavedAnswerIds(prev => ({
+          ...prev,
+          [currentElementId]: response.data.answer.id
+        }));
+      }
+
+      console.log('💾 Auto-saved question:', currentElementId);
+    } catch (error) {
+      console.error('Error auto-saving:', error);
+    }
+  };
+
+  const handleNavigate = async (direction) => {
+    // Auto-save before navigating
+    await saveCurrentQuestionAnswers();
+
+    // Then navigate
+    if (direction === 'next') {
+      setCurrentElementIndex(prev => Math.min(elements.length - 1, prev + 1));
+    } else {
+      setCurrentElementIndex(prev => Math.max(0, prev - 1));
+    }
+  };
+
   const handleSubmit = async () => {
     if (!submission) return;
 
     try {
-      // Save answers first
-      await saveAnswers();
+      // Save current question's answers before submitting
+      await saveCurrentQuestionAnswers();
 
       // Then submit
       await submissionAPI.update(submission.id, { status: 'submitted' });
@@ -296,10 +439,8 @@ export default function ActivityTaking() {
   const isLast = currentElementIndex === elements.length - 1;
   const isSubmitted = submission?.status === 'submitted';
 
-  // Process the HTML to replace data-element-uuid with the activity element ID
-  const processedBodyHtml = currentElement?.body_html 
-    ? currentElement.body_html.replace(/data-element-uuid="[^"]*"/g, `data-element-uuid="${currentElement.id}"`)
-    : '';
+  // Don't modify the body HTML - preserve original field UUIDs
+  const processedBodyHtml = currentElement?.body_html || '';
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -326,10 +467,14 @@ export default function ActivityTaking() {
           Question {currentElementIndex + 1} of {elements.length}
         </span>
         <span className="text-sm text-muted-foreground">
-          {Math.round((Object.keys(answers).filter(key => {
-            const value = answers[key];
-            return value !== undefined && value !== '' && !(Array.isArray(value) && value.length === 0);
-          }).length / elements.length) * 100)}% Complete
+          {(() => {
+            // Count how many questions have been answered (based on savedAnswerIds)
+            const answeredQuestions = Object.keys(savedAnswerIds).length;
+            const completionPercentage = elements.length > 0
+              ? Math.round((answeredQuestions / elements.length) * 100)
+              : 0;
+            return completionPercentage;
+          })()}% Complete
         </span>
       </div>
 
@@ -365,7 +510,7 @@ export default function ActivityTaking() {
       <div className="flex justify-between">
         <Button
           variant="outline"
-          onClick={() => setCurrentElementIndex(prev => Math.max(0, prev - 1))}
+          onClick={() => handleNavigate('prev')}
           disabled={currentElementIndex === 0}
         >
           <ChevronLeft className="mr-2 h-4 w-4" />
@@ -378,12 +523,12 @@ export default function ActivityTaking() {
             Submit Activity
           </Button>
         ) : !isSubmitted ? (
-          <Button onClick={() => setCurrentElementIndex(prev => Math.min(elements.length - 1, prev + 1))}>
+          <Button onClick={() => handleNavigate('next')}>
             Next
             <ChevronRight className="ml-2 h-4 w-4" />
           </Button>
         ) : isLast ? null : (
-          <Button onClick={() => setCurrentElementIndex(prev => Math.min(elements.length - 1, prev + 1))}>
+          <Button onClick={() => handleNavigate('next')}>
             Next
             <ChevronRight className="ml-2 h-4 w-4" />
           </Button>

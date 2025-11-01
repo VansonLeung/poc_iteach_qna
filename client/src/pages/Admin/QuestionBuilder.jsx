@@ -128,20 +128,19 @@ export default function QuestionBuilder() {
         if (type === 'radio' || type === 'checkbox') {
           element.value = node.value || node.getAttribute('value') || '';
           element.optionLabel = label;
-          
-          // Try to find the group name for radio buttons
-          if (type === 'radio') {
-            element.groupName = node.name || node.getAttribute('name') || '';
-          }
+
+          // Get the group name (from 'name' attribute)
+          element.groupName = node.name || node.getAttribute('name') || '';
         }
 
         elements.push(element);
       }
     });
 
-    // Group radio buttons by name and checkboxes by proximity
+    // Group radio buttons and checkboxes by name
     const groupedElements = [];
     const radioGroups = {};
+    const checkboxGroups = {};
     const processedUuids = new Set();
 
     elements.forEach((el) => {
@@ -150,7 +149,7 @@ export default function QuestionBuilder() {
       if (el.type === 'radio' && el.groupName) {
         if (!radioGroups[el.groupName]) {
           radioGroups[el.groupName] = {
-            uuid: `radio-group-${el.groupName}`,
+            uuid: `${el.groupName}`,
             type: 'radio-group',
             label: el.label.replace(/Option \d+/i, '').trim() || 'Radio Group',
             groupName: el.groupName,
@@ -163,13 +162,34 @@ export default function QuestionBuilder() {
           label: el.optionLabel
         });
         processedUuids.add(el.uuid);
+      } else if (el.type === 'checkbox' && el.groupName) {
+        // Group checkboxes by their 'name' attribute
+        if (!checkboxGroups[el.groupName]) {
+          checkboxGroups[el.groupName] = {
+            uuid: `${el.groupName}`,
+            type: 'checkbox-group',
+            label: el.label.replace(/Option \d+/i, '').trim() || 'Checkbox Group',
+            groupName: el.groupName,
+            options: []
+          };
+        }
+        checkboxGroups[el.groupName].options.push({
+          uuid: el.uuid,
+          value: el.value,
+          label: el.optionLabel
+        });
+        processedUuids.add(el.uuid);
       } else {
+        // Individual element (text, textarea, or checkbox/radio without name)
         groupedElements.push(el);
       }
     });
 
-    // Add radio groups
+    // Add radio and checkbox groups
     Object.values(radioGroups).forEach(group => {
+      groupedElements.push(group);
+    });
+    Object.values(checkboxGroups).forEach(group => {
       groupedElements.push(group);
     });
 
@@ -211,21 +231,36 @@ export default function QuestionBuilder() {
 
       // Save or update scoring configuration if rubric is selected or answers configured
       if (scoringData.rubricId || scoringData.scoringType !== 'manual' || Object.keys(scoringData.expectedAnswers).length > 0) {
-        // Clean expectedAnswers - remove entries with empty values
+        // Get all valid field identifiers from the current question HTML
+        const validFieldIds = new Set();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(formData.bodyHtml, 'text/html');
+
+        // Collect all field identifiers (name or data-element-uuid)
+        const inputs = doc.querySelectorAll('input, textarea, select');
+        inputs.forEach(input => {
+          const fieldId = input.getAttribute('name') || input.getAttribute('data-element-uuid');
+          if (fieldId) {
+            validFieldIds.add(fieldId);
+          }
+        });
+
+        // Clean expectedAnswers - remove entries with empty values AND orphaned keys
         const cleanedExpectedAnswers = Object.entries(scoringData.expectedAnswers || {}).reduce((acc, [key, value]) => {
-          if (value !== '' && value !== null && value !== undefined) {
+          // Keep only if: 1) value is not empty, AND 2) field still exists in HTML
+          if (value !== '' && value !== null && value !== undefined && validFieldIds.has(key)) {
             acc[key] = value;
           }
           return acc;
         }, {});
 
-        // Clean fieldScores - remove entries with invalid values
+        // Clean fieldScores - remove entries with invalid values AND orphaned keys
         const cleanedFieldScores = Object.entries(scoringData.fieldScores || {}).reduce((acc, [key, value]) => {
           const points = parseFloat(value?.points);
           const wrongPenalty = parseFloat(value?.wrongPenalty);
-          
-          // Only include if points is a valid number
-          if (!isNaN(points) && points !== 0) {
+
+          // Only include if: 1) points is valid, AND 2) field still exists in HTML
+          if (!isNaN(points) && points !== 0 && validFieldIds.has(key)) {
             acc[key] = {
               points,
               wrongPenalty: !isNaN(wrongPenalty) ? wrongPenalty : 0
@@ -317,24 +352,28 @@ export default function QuestionBuilder() {
 </div>`;
         break;
       case 'radio':
+        // Each radio button has unique UUID, but shares 'name' attribute for grouping
+        const radioGroupName = `radio-${uuid}`;
         template = `<div class="form-group my-4">
   <label>Choose one option:</label>
   <div>
-    <label><input type="radio" name="radio-${uuid}" data-element-uuid="${crypto.randomUUID()}" data-element-type="radio" data-element-label="Option 1" value="option1" /> Option 1</label>
+    <label><input type="radio" name="${radioGroupName}" data-element-uuid="${crypto.randomUUID()}" data-element-type="radio" data-element-label="Option 1" value="option1" /> Option 1</label>
   </div>
   <div>
-    <label><input type="radio" name="radio-${uuid}" data-element-uuid="${crypto.randomUUID()}" data-element-type="radio" data-element-label="Option 2" value="option2" /> Option 2</label>
+    <label><input type="radio" name="${radioGroupName}" data-element-uuid="${crypto.randomUUID()}" data-element-type="radio" data-element-label="Option 2" value="option2" /> Option 2</label>
   </div>
 </div>`;
         break;
       case 'checkbox':
+        // All checkboxes in a group share the same 'name' for grouping
+        const checkboxGroupName = `checkbox-${uuid}`;
         template = `<div class="form-group my-4">
   <label>Select all that apply:</label>
   <div>
-    <label><input type="checkbox" data-element-uuid="${crypto.randomUUID()}" data-element-type="checkbox" data-element-label="Option 1" value="option1" /> Option 1</label>
+    <label><input type="checkbox" name="${checkboxGroupName}" data-element-uuid="${crypto.randomUUID()}" data-element-type="checkbox" data-element-label="Option 1" value="option1" /> Option 1</label>
   </div>
   <div>
-    <label><input type="checkbox" data-element-uuid="${crypto.randomUUID()}" data-element-type="checkbox" data-element-label="Option 2" value="option2" /> Option 2</label>
+    <label><input type="checkbox" name="${checkboxGroupName}" data-element-uuid="${crypto.randomUUID()}" data-element-type="checkbox" data-element-label="Option 2" value="option2" /> Option 2</label>
   </div>
 </div>`;
         break;
@@ -655,6 +694,45 @@ export default function QuestionBuilder() {
                                       </Label>
                                     </div>
                                   ))}
+                                </div>
+                              ) : element.type === 'checkbox-group' ? (
+                                <div className="space-y-2">
+                                  <p className="text-sm text-muted-foreground">Select all correct options:</p>
+                                  {element.options.map((option) => {
+                                    const currentAnswers = Array.isArray(scoringData.expectedAnswers[element.uuid])
+                                      ? scoringData.expectedAnswers[element.uuid]
+                                      : [];
+                                    const isChecked = currentAnswers.includes(option.value);
+
+                                    return (
+                                      <div key={option.uuid} className="flex items-center space-x-2">
+                                        <input
+                                          type="checkbox"
+                                          id={`answer-${option.uuid}`}
+                                          checked={isChecked}
+                                          onChange={(e) => {
+                                            let newAnswers;
+                                            if (e.target.checked) {
+                                              newAnswers = [...currentAnswers, option.value];
+                                            } else {
+                                              newAnswers = currentAnswers.filter(v => v !== option.value);
+                                            }
+                                            setScoringData({
+                                              ...scoringData,
+                                              expectedAnswers: {
+                                                ...scoringData.expectedAnswers,
+                                                [element.uuid]: newAnswers
+                                              }
+                                            });
+                                          }}
+                                          className="h-4 w-4"
+                                        />
+                                        <Label htmlFor={`answer-${option.uuid}`} className="text-sm cursor-pointer">
+                                          {option.label} <span className="text-muted-foreground">({option.value})</span>
+                                        </Label>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               ) : element.type === 'checkbox' ? (
                                 <div className="space-y-2">

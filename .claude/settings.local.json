@@ -13,7 +13,10 @@
       "Bash(npm test:*)",
       "Bash(awk:*)",
       "Bash(curl:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(sqlite3:*)",
+      "Bash(npm run dev:client:*)",
+      "Bash(npm run dev:server:*)"
     ],
     "deny": [],
     "ask": []

@@ -124,11 +124,16 @@ Question.hasMany(QuestionResponse, { foreignKey: 'question_id', as: 'responses' 
 // QuestionScore associations
 QuestionScore.belongsTo(QuestionResponse, { foreignKey: 'response_id', as: 'response' });
 QuestionScore.belongsTo(ActivitySubmission, { foreignKey: 'submission_id', as: 'submission' });
+// New associations for UserActivitySubmission system
+QuestionScore.belongsTo(UserActivitySubmissionAnswer, { foreignKey: 'answer_id', as: 'answer' });
+QuestionScore.belongsTo(UserActivitySubmission, { foreignKey: 'user_submission_id', as: 'userSubmission' });
 QuestionScore.belongsTo(Question, { foreignKey: 'question_id', as: 'question' });
 QuestionScore.belongsTo(Rubric, { foreignKey: 'rubric_id', as: 'rubric' });
 QuestionScore.belongsTo(User, { foreignKey: 'graded_by', as: 'grader' });
 Question.hasMany(QuestionScore, { foreignKey: 'question_id', as: 'scores' });
 User.hasMany(QuestionScore, { foreignKey: 'graded_by', as: 'gradesGiven' });
+UserActivitySubmissionAnswer.hasMany(QuestionScore, { foreignKey: 'answer_id', as: 'scores' });
+UserActivitySubmission.hasMany(QuestionScore, { foreignKey: 'user_submission_id', as: 'questionScores' });
 
 // SectionWeight associations
 SectionWeight.belongsTo(ActivityElement, { foreignKey: 'activity_element_id', as: 'element' });

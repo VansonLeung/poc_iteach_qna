@@ -31,10 +31,14 @@ export const authenticate = (req, res, next) => {
 export const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
+      console.log('Authorization failed: No user in request');
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
+    console.log('Authorization check - User role:', req.user.role, 'Required roles:', roles);
+
     if (!roles.includes(req.user.role)) {
+      console.log('Authorization failed: Role mismatch');
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
 

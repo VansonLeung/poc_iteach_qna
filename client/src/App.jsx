@@ -8,6 +8,8 @@ import Register from './pages/Auth/Register';
 // Admin Pages
 import ActivityList from './pages/Admin/ActivityList';
 import ActivityBuilder from './pages/Admin/ActivityBuilder';
+import ActivityReport from './pages/Admin/ActivityReport';
+import GradingInterface from './pages/Admin/GradingInterface';
 import QuestionBuilder from './pages/Admin/QuestionBuilder';
 import QuestionLibrary from './pages/Admin/QuestionLibrary';
 import RubricList from './pages/Admin/RubricList';
@@ -17,6 +19,7 @@ import RubricBuilder from './pages/Admin/RubricBuilder';
 import Dashboard from './pages/User/Dashboard';
 import ActivityTaking from './pages/User/ActivityTaking';
 import SubmissionHistory from './pages/User/SubmissionHistory';
+import SubmissionScores from './pages/User/SubmissionScores';
 
 // Shared Components
 import Layout from './components/Layout/Layout';
@@ -107,11 +110,28 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/activities/:id/report"
+            element={
+              <ProtectedRoute roles={['admin', 'teacher']}>
+                <ActivityReport />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/activities/:activityId/grade"
+            element={
+              <ProtectedRoute roles={['admin', 'teacher']}>
+                <GradingInterface />
+              </ProtectedRoute>
+            }
+          />
 
           {/* User routes */}
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/activities/:id" element={<ActivityTaking />} />
           <Route path="/submissions" element={<SubmissionHistory />} />
+          <Route path="/submissions/:id/scores" element={<SubmissionScores />} />
 
           {/* Default redirect */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

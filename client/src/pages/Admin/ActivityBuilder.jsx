@@ -551,7 +551,7 @@ export default function ActivityBuilder() {
       if (el.type === 'radio' && el.groupName) {
         if (!radioGroups[el.groupName]) {
           radioGroups[el.groupName] = {
-            uuid: `radio-group-${el.groupName}`,
+            uuid: `${el.groupName}`,
             type: 'radio-group',
             label: el.label.replace(/Option \d+/i, '').trim() || 'Radio Group',
             groupName: el.groupName,

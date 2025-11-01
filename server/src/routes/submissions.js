@@ -3,6 +3,14 @@ import { body, query, validationResult } from 'express-validator';
 import { v4 as uuidv4 } from 'uuid';
 import { Activity, User, UserActivitySubmission, UserActivitySubmissionVersion, UserActivitySubmissionAnswer, Question } from '../models/index.js';
 import { authenticate, authorize } from '../middleware/auth.js';
+import {
+  calculateSubmissionScore,
+  autoGradeSubmission,
+  getSubmissionScoreSummary,
+  manualGradeQuestion,
+  updateQuestionScore,
+  getSubmissionForGrading
+} from '../services/scoringService.js';
 
 const router = express.Router();
 
@@ -261,6 +269,11 @@ router.get(
           updated_by: s.updated_by,
           created_at: s.created_at,
           updated_at: s.updated_at,
+          total_score: s.total_score,
+          max_possible_score: s.max_possible_score,
+          percentage: s.percentage,
+          graded_at: s.graded_at,
+          graded_by: s.graded_by,
           activity_title: s.activity ? s.activity.title : null,
           user_email: s.user ? s.user.email : null,
           first_name: s.user ? s.user.first_name : null,
@@ -323,6 +336,11 @@ router.get('/:id', authenticate, async (req, res, next) => {
         updated_by: submission.updated_by,
         created_at: submission.created_at,
         updated_at: submission.updated_at,
+        total_score: submission.total_score,
+        max_possible_score: submission.max_possible_score,
+        percentage: submission.percentage,
+        graded_at: submission.graded_at,
+        graded_by: submission.graded_by,
         activity_title: submission.activity ? submission.activity.title : null,
         user_email: submission.user ? submission.user.email : null,
         first_name: submission.user ? submission.user.first_name : null,
@@ -435,5 +453,396 @@ router.get('/:id/versions', authenticate, async (req, res, next) => {
     next(error);
   }
 });
+
+/**
+ * GET /api/submissions/:id/scores
+ * Get submission score summary with all question scores
+ */
+router.get('/:id/scores', authenticate, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check if submission exists and user has permission
+    const submission = await UserActivitySubmission.findByPk(id);
+    if (!submission) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    // Check permissions
+    if (submission.user_id !== req.user.userId && !['admin', 'teacher'].includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    // Get score summary
+    const scoreSummary = await getSubmissionScoreSummary(id);
+
+    res.json(scoreSummary);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/submissions/:id/auto-grade
+ * Trigger auto-grading for a submission
+ */
+router.post(
+  '/:id/auto-grade',
+  authenticate,
+  authorize('admin', 'teacher'),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user.userId;
+
+      // Check if submission exists
+      const submission = await UserActivitySubmission.findByPk(id);
+      if (!submission) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+
+      // Only auto-grade submitted submissions
+      if (submission.status !== 'submitted') {
+        return res.status(400).json({
+          error: 'Can only auto-grade submitted submissions',
+          currentStatus: submission.status
+        });
+      }
+
+      // Run auto-grading
+      const result = await autoGradeSubmission(id, userId);
+
+      res.json({
+        message: 'Auto-grading completed',
+        ...result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/submissions/:id/calculate-score
+ * Recalculate submission total score from existing question scores
+ */
+router.post(
+  '/:id/calculate-score',
+  authenticate,
+  authorize('admin', 'teacher'),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      // Check if submission exists
+      const submission = await UserActivitySubmission.findByPk(id);
+      if (!submission) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+
+      // Recalculate score
+      const scoreData = await calculateSubmissionScore(id);
+
+      res.json({
+        message: 'Score recalculated successfully',
+        ...scoreData
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/submissions/:id/grading
+ * Get submission details for grading interface
+ */
+router.get(
+  '/:id/grading',
+  authenticate,
+  authorize('admin', 'teacher'),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params;
+
+      const gradingData = await getSubmissionForGrading(id);
+
+      res.json(gradingData);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/submissions/:id/answers/:answerId/grade
+ * Manually grade a specific question answer
+ */
+router.post(
+  '/:id/answers/:answerId/grade',
+  authenticate,
+  authorize('admin', 'teacher'),
+  [
+    body('score').isFloat({ min: 0 }).withMessage('Score must be a positive number'),
+    body('maxScore').isFloat({ min: 0 }).withMessage('Max score must be a positive number'),
+    body('feedback').optional().isString(),
+    body('criteriaScores').optional().isObject(),
+    body('rubricId').optional().isUUID()
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id, answerId } = req.params;
+      const { score, maxScore, feedback, criteriaScores, rubricId } = req.body;
+      const userId = req.user.userId;
+
+      // Verify submission exists
+      const submission = await UserActivitySubmission.findByPk(id);
+      if (!submission) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+
+      // Verify answer belongs to this submission
+      const answer = await UserActivitySubmissionAnswer.findByPk(answerId);
+      if (!answer || answer.submission_id !== id) {
+        return res.status(404).json({ error: 'Answer not found in this submission' });
+      }
+
+      // Grade the question
+      const result = await manualGradeQuestion(answerId, {
+        score,
+        maxScore,
+        feedback,
+        criteriaScores,
+        rubricId
+      }, userId);
+
+      res.json({
+        message: 'Question graded successfully',
+        ...result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * PUT /api/submissions/:id/answers/:answerId/grade
+ * Update an existing question grade
+ */
+router.put(
+  '/:id/answers/:answerId/grade',
+  authenticate,
+  authorize('admin', 'teacher'),
+  [
+    body('score').optional().isFloat({ min: 0 }),
+    body('maxScore').optional().isFloat({ min: 0 }),
+    body('feedback').optional().isString(),
+    body('criteriaScores').optional().isObject()
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id, answerId } = req.params;
+      const { score, maxScore, feedback, criteriaScores } = req.body;
+      const userId = req.user.userId;
+
+      // Verify submission exists
+      const submission = await UserActivitySubmission.findByPk(id);
+      if (!submission) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+
+      // Verify answer belongs to this submission
+      const answer = await UserActivitySubmissionAnswer.findByPk(answerId);
+      if (!answer || answer.submission_id !== id) {
+        return res.status(404).json({ error: 'Answer not found in this submission' });
+      }
+
+      // Find existing score for this answer
+      const { QuestionScore } = await import('../models/index.js');
+      const existingScore = await QuestionScore.findOne({
+        where: {
+          answer_id: answerId,
+          is_current: true
+        }
+      });
+
+      if (!existingScore) {
+        return res.status(404).json({ error: 'No existing grade found for this answer' });
+      }
+
+      // Update the score
+      const result = await updateQuestionScore(existingScore.id, {
+        score,
+        maxScore,
+        feedback,
+        criteriaScores
+      }, userId);
+
+      res.json({
+        message: 'Grade updated successfully',
+        ...result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/submissions/:id/grade-all
+ * Save grades for all questions in a submission at once
+ */
+router.post(
+  '/:id/grade-all',
+  authenticate,
+  authorize('admin', 'teacher'),
+  [
+    body('grades').isArray().withMessage('Grades must be an array'),
+    body('grades.*.answerId').isUUID(),
+    body('grades.*.score').isFloat({ min: 0 }),
+    body('grades.*.maxScore').isFloat({ min: 0 }),
+    body('grades.*.feedback').optional().isString(),
+    body('grades.*.criteriaScores').custom((value) => {
+      if (value === null || value === undefined) return true;
+      if (typeof value === 'object' && !Array.isArray(value)) return true;
+      throw new Error('criteriaScores must be an object or null');
+    }),
+    body('grades.*.rubricId').custom((value) => {
+      if (value === null || value === undefined) return true;
+      // UUID v4 regex
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) return true;
+      throw new Error('rubricId must be a valid UUID or null');
+    })
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { grades } = req.body;
+      const userId = req.user.userId;
+
+      // Verify submission exists
+      const submission = await UserActivitySubmission.findByPk(id);
+      if (!submission) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+
+      const results = [];
+      const errors_list = [];
+
+      // Grade each question
+      for (const gradeData of grades) {
+        try {
+          const { answerId, score, maxScore, feedback, criteriaScores, rubricId } = gradeData;
+
+          // Verify answer belongs to this submission
+          const answer = await UserActivitySubmissionAnswer.findByPk(answerId);
+          if (!answer || answer.submission_id !== id) {
+            errors_list.push({
+              answerId,
+              error: 'Answer not found in this submission'
+            });
+            continue;
+          }
+
+          const result = await manualGradeQuestion(answerId, {
+            score,
+            maxScore,
+            feedback,
+            criteriaScores,
+            rubricId
+          }, userId);
+
+          results.push({
+            answerId,
+            success: true,
+            score: result.score
+          });
+        } catch (error) {
+          errors_list.push({
+            answerId: gradeData.answerId,
+            error: error.message
+          });
+        }
+      }
+
+      res.json({
+        message: 'Grading completed',
+        gradedCount: results.length,
+        errorCount: errors_list.length,
+        results,
+        errors: errors_list
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * PATCH /api/submissions/:id/status
+ * Manually change submission status (teacher only)
+ */
+router.patch(
+  '/:id/status',
+  authenticate,
+  authorize('admin', 'teacher'),
+  [
+    body('status').isIn(['in-progress', 'submitted', 'graded', 'archived']).withMessage('Invalid status')
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { status } = req.body;
+      const userId = req.user.userId;
+
+      const submission = await UserActivitySubmission.findByPk(id);
+      if (!submission) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+
+      const oldStatus = submission.status;
+
+      // Update status
+      await submission.update({
+        status,
+        graded_at: status === 'graded' ? (submission.graded_at || new Date()) : null,
+        graded_by: status === 'graded' ? (submission.graded_by || userId) : null
+      });
+
+      res.json({
+        message: `Submission status changed from ${oldStatus} to ${status}`,
+        submission: {
+          id: submission.id,
+          status: submission.status,
+          graded_at: submission.graded_at,
+          graded_by: submission.graded_by
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router;

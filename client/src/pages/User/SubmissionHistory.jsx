@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { submissionAPI } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { CheckCircle, Clock, Eye } from 'lucide-react';
+import { CheckCircle, Clock, Eye, Award } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function SubmissionHistory() {
@@ -35,7 +35,7 @@ export default function SubmissionHistory() {
       <div>
         <h1 className="text-3xl font-bold">My Submissions</h1>
         <p className="text-muted-foreground mt-2">
-          View all your activity submissions
+          View all your activity submissions and scores
         </p>
       </div>
 
@@ -81,13 +81,24 @@ export default function SubmissionHistory() {
                       </div>
                     </div>
                   </div>
-                  <Button
-                    variant={submission.status === 'submitted' ? 'outline' : 'default'}
-                    onClick={() => navigate(`/activities/${submission.activity_id}`)}
-                  >
-                    <Eye className="mr-2 h-4 w-4" />
-                    {submission.status === 'submitted' ? 'View' : 'Continue'}
-                  </Button>
+                  <div className="flex items-center space-x-2">
+                    {submission.status === 'submitted' && (
+                      <Button
+                        variant="default"
+                        onClick={() => navigate(`/submissions/${submission.id}/scores`)}
+                      >
+                        <Award className="mr-2 h-4 w-4" />
+                        View Scores
+                      </Button>
+                    )}
+                    <Button
+                      variant={submission.status === 'submitted' ? 'outline' : 'default'}
+                      onClick={() => navigate(`/activities/${submission.activity_id}`)}
+                    >
+                      <Eye className="mr-2 h-4 w-4" />
+                      {submission.status === 'submitted' ? 'View' : 'Continue'}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

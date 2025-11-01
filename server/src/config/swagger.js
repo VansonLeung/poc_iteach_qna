@@ -383,6 +383,10 @@ const options = {
       {
         name: 'Question Scoring',
         description: 'Question scoring configuration'
+      },
+      {
+        name: 'Scoring',
+        description: 'Auto-grading, score calculation, and activity reports'
       }
     ]
   },

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Op } from 'sequelize';
 import { Activity, ActivityVersion, User, ActivityElement, Question } from '../models/index.js';
 import { authenticate, authorize } from '../middleware/auth.js';
+import { getActivityReport } from '../services/scoringService.js';
 
 const router = express.Router();
 
@@ -454,5 +455,44 @@ router.get('/:id/versions', authenticate, async (req, res, next) => {
     next(error);
   }
 });
+
+/**
+ * GET /api/activities/:id/report
+ * Get grading report for an activity with all student submissions
+ */
+router.get(
+  '/:id/report',
+  authenticate,
+  authorize(['admin', 'teacher']),
+  [
+    query('status').optional().isIn(['in-progress', 'submitted', 'graded', 'archived']),
+    query('page').optional().isInt({ min: 1 }).toInt(),
+    query('limit').optional().isInt({ min: 1, max: 100 }).toInt()
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { status, page = 1, limit = 100 } = req.query;
+
+      // Check if activity exists
+      const activity = await Activity.findByPk(id);
+      if (!activity) {
+        return res.status(404).json({ error: 'Activity not found' });
+      }
+
+      // Get activity report
+      const report = await getActivityReport(id, { status, page, limit });
+
+      res.json(report);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router;

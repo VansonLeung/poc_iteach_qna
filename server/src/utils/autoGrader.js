@@ -318,7 +318,17 @@ export const gradeResponse = (questionResponse, scoringConfig) => {
     let result;
 
     // Determine answer type and grade accordingly
-    if (typeof expectedAnswer === 'object' && expectedAnswer !== null) {
+    if (typeof expectedAnswer === 'boolean') {
+      // Boolean answer (checkbox/radio field)
+      const correct = studentAnswer === expectedAnswer;
+      result = {
+        correct,
+        score: correct ? fieldPoints : 0,
+        maxScore: fieldPoints,
+        feedback: correct ? 'Correct selection' : `Expected: ${expectedAnswer ? 'selected' : 'not selected'}`,
+        details: { studentAnswer, expectedAnswer }
+      };
+    } else if (typeof expectedAnswer === 'object' && expectedAnswer !== null) {
       if (expectedAnswer.keywords || expectedAnswer.minLength || expectedAnswer.requiredPhrases) {
         // Essay-type answer
         result = gradeEssay(studentAnswer, expectedAnswer, autoGradeConfig);
