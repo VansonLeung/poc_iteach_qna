@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { submissionAPI } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import RubricFeedback from '@/components/Scoring/RubricFeedback';
 export default function SubmissionScores() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [scoreData, setScoreData] = useState(null);
   const [error, setError] = useState(null);
@@ -38,11 +39,14 @@ export default function SubmissionScores() {
   }
 
   if (error) {
+    const backDestination = location.state?.from === 'dashboard' ? '/dashboard' : '/submissions';
+    const backLabel = location.state?.from === 'dashboard' ? 'Back to Dashboard' : 'Back to My Submissions';
+
     return (
       <div className="space-y-6">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={() => navigate(backDestination)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
+          {backLabel}
         </Button>
         <Card>
           <CardContent className="p-12 text-center">
@@ -75,14 +79,18 @@ export default function SubmissionScores() {
 
   const badge = scores.percentage ? getScoreBadge(scores.percentage) : null;
 
+  // Determine back navigation - default to /submissions since this is always a submission page
+  const backDestination = location.state?.from === 'dashboard' ? '/dashboard' : '/submissions';
+  const backLabel = location.state?.from === 'dashboard' ? 'Back to Dashboard' : 'Back to My Submissions';
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <Button variant="ghost" onClick={() => navigate(-1)}>
+          <Button variant="ghost" onClick={() => navigate(backDestination)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back
+            {backLabel}
           </Button>
           <div>
             <h1 className="text-3xl font-bold">Submission Scores</h1>

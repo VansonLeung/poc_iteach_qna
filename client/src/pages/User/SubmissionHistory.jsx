@@ -92,7 +92,7 @@ export default function SubmissionHistory() {
                     {(submission.status === 'submitted' || submission.status === 'graded') && (
                       <Button
                         variant="default"
-                        onClick={() => navigate(`/submissions/${submission.id}/scores`)}
+                        onClick={() => navigate(`/submissions/${submission.id}/scores`, { state: { from: 'submissions' } })}
                       >
                         <Award className="mr-2 h-4 w-4" />
                         View Scores
@@ -104,7 +104,7 @@ export default function SubmissionHistory() {
                         if (submission.status === 'submitted' || submission.status === 'graded') {
                           navigate(`/submissions/${submission.id}/view`);
                         } else {
-                          navigate(`/activities/${submission.activity_id}`);
+                          navigate(`/activities/${submission.activity_id}`, { state: { from: 'submissions' } });
                         }
                       }}
                     >

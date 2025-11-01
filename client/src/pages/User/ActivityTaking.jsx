@@ -640,6 +640,14 @@ export default function ActivityTaking() {
     );
   }
 
+  // Determine back navigation based on where user came from
+  const backDestination = isSubmissionView
+    ? '/submissions'
+    : (location.state?.from === 'submissions' ? '/submissions' : '/dashboard');
+  const backLabel = (isSubmissionView || location.state?.from === 'submissions')
+    ? 'Back to My Submissions'
+    : 'Back to Dashboard';
+
   if (elements.length === 0) {
     return (
       <div className="text-center py-12">
@@ -650,8 +658,8 @@ export default function ActivityTaking() {
         <p className="text-sm text-muted-foreground mt-1">
           Please contact your instructor or try again later.
         </p>
-        <Button className="mt-4" onClick={() => navigate('/dashboard')}>
-          Back to Dashboard
+        <Button className="mt-4" onClick={() => navigate(backDestination)}>
+          {backLabel}
         </Button>
       </div>
     );
@@ -679,9 +687,9 @@ export default function ActivityTaking() {
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <Button variant="ghost" onClick={() => navigate('/dashboard')}>
+        <Button variant="ghost" onClick={() => navigate(backDestination)}>
           <ChevronLeft className="mr-2 h-4 w-4" />
-          Back to Dashboard
+          {backLabel}
         </Button>
         <h1 className="text-3xl font-bold mt-4">{activity.title}</h1>
         <p className="text-muted-foreground mt-2">{activity.description}</p>
