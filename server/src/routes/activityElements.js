@@ -85,8 +85,87 @@ const getNestedChildren = async (elementId) => {
 };
 
 /**
- * POST /api/activity-elements
- * Create new activity element
+ * @swagger
+ * /api/activity-elements:
+ *   post:
+ *     summary: Create a new activity element (section or question)
+ *     tags: [Activity Elements]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - activityId
+ *               - elementType
+ *               - orderIndex
+ *             properties:
+ *               activityId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Parent activity ID
+ *                 example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *               elementType:
+ *                 type: string
+ *                 enum: [section, question]
+ *                 description: Type of element
+ *                 example: "section"
+ *               parentElementId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Parent element ID for nesting (null for root level)
+ *                 example: null
+ *               questionId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Question ID (required if elementType is 'question')
+ *                 example: "q1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *               title:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Element title (for sections)
+ *                 example: "Chapter 1: Introduction"
+ *               description:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Element description
+ *                 example: "Basic concepts and terminology"
+ *               orderIndex:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Order within parent element
+ *                 example: 0
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Element tags
+ *                 example: ["intro", "beginner"]
+ *     responses:
+ *       201:
+ *         description: Activity element created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 element:
+ *                   $ref: '#/components/schemas/ActivityElement'
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - Requires admin or teacher role
+ *       404:
+ *         description: Activity, parent element, or question not found
  */
 router.post(
   '/',
@@ -194,8 +273,72 @@ router.post(
 );
 
 /**
- * PUT /api/activity-elements/:id
- * Edit activity element
+ * @swagger
+ * /api/activity-elements/{id}:
+ *   put:
+ *     summary: Update an activity element
+ *     tags: [Activity Elements]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Activity element ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               questionId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Update question ID (for question elements)
+ *               title:
+ *                 type: string
+ *                 description: Update element title
+ *               description:
+ *                 type: string
+ *                 description: Update element description
+ *               orderIndex:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Update order index
+ *               parentElementId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Update parent element (null for root)
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Update tags
+ *     responses:
+ *       200:
+ *         description: Activity element updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 element:
+ *                   $ref: '#/components/schemas/ActivityElement'
+ *       400:
+ *         description: Validation error or no fields to update
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Element or referenced resources not found
  */
 router.put(
   '/:id',
@@ -315,8 +458,73 @@ router.put(
 );
 
 /**
- * GET /api/activity-elements
- * Find activity elements with filters
+ * @swagger
+ * /api/activity-elements:
+ *   get:
+ *     summary: Get activity elements with nested children
+ *     tags: [Activity Elements]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: activityId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by activity ID
+ *       - in: query
+ *         name: elementType
+ *         schema:
+ *           type: string
+ *           enum: [section, question]
+ *         description: Filter by element type
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, archived]
+ *           default: active
+ *         description: Filter by status
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 50
+ *         description: Items per page
+ *     responses:
+ *       200:
+ *         description: Activity elements retrieved successfully with nested structure
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 elements:
+ *                   type: array
+ *                   items:
+ *                     allOf:
+ *                       - $ref: '#/components/schemas/ActivityElement'
+ *                       - type: object
+ *                         properties:
+ *                           children:
+ *                             type: array
+ *                             items:
+ *                               $ref: '#/components/schemas/ActivityElement'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Unauthorized
  */
 router.get(
   '/',
@@ -430,8 +638,42 @@ router.get(
 );
 
 /**
- * GET /api/activity-elements/:id
- * Get activity element by ID with nested children
+ * @swagger
+ * /api/activity-elements/{id}:
+ *   get:
+ *     summary: Get activity element by ID with nested children
+ *     tags: [Activity Elements]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Activity element ID
+ *     responses:
+ *       200:
+ *         description: Activity element retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 element:
+ *                   allOf:
+ *                     - $ref: '#/components/schemas/ActivityElement'
+ *                     - type: object
+ *                       properties:
+ *                         children:
+ *                           type: array
+ *                           items:
+ *                             $ref: '#/components/schemas/ActivityElement'
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Activity element not found
  */
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
@@ -495,8 +737,38 @@ router.get('/:id', authenticate, async (req, res, next) => {
 });
 
 /**
- * DELETE /api/activity-elements/:id/archive
- * Archive activity element (soft delete)
+ * @swagger
+ * /api/activity-elements/{id}/archive:
+ *   delete:
+ *     summary: Archive an activity element (soft delete)
+ *     tags: [Activity Elements]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Activity element ID
+ *     responses:
+ *       200:
+ *         description: Activity element archived successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Activity element archived successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Activity element not found
  */
 router.delete(
   '/:id/archive',

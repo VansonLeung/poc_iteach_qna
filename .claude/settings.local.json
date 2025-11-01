@@ -11,7 +11,9 @@
       "Bash(npm run migrate:up:*)",
       "Bash(npm run db:seed:*)",
       "Bash(npm test:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

@@ -24,8 +24,58 @@ const saveActivityVersion = async (activityId, activity, userId) => {
 };
 
 /**
- * POST /api/activities
- * Create new activity
+ * @swagger
+ * /api/activities:
+ *   post:
+ *     summary: Create a new activity
+ *     tags: [Activities]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 description: Activity title
+ *                 example: Introduction to JavaScript
+ *               description:
+ *                 type: string
+ *                 description: Activity description
+ *                 example: Learn the basics of JavaScript programming
+ *               tags:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Activity tags
+ *                 example: ["javascript", "programming", "beginner"]
+ *     responses:
+ *       201:
+ *         description: Activity created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 activity:
+ *                   $ref: '#/components/schemas/Activity'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ValidationError'
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - Requires admin or teacher role
  */
 router.post(
   '/',

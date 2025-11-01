@@ -5,6 +5,8 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpec from './config/swagger.js';
 
 // Import database models and initialize
 import { sequelize, syncDatabase } from './models/index.js';
@@ -40,6 +42,19 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Swagger Documentation
+app.use('/api-doc', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  explorer: true,
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'iTeach Q&A API Documentation'
+}));
+
+// Swagger JSON endpoint
+app.get('/swagger.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -69,50 +84,78 @@ const startServer = async () => {
     // Start server
     app.listen(PORT, () => {
       console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║   🎓 iTeach Q&A Platform - Server Running (Sequelize)    ║
-║                                                           ║
-║   Port: ${PORT}                                           ║
-║   Environment: ${process.env.NODE_ENV || 'development'}                                  ║
-║   CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:5173'}              ║
-║                                                           ║
-║   API Endpoints:                                          ║
-║   - POST   /api/auth/register                             ║
-║   - POST   /api/auth/login                                ║
-║   - GET    /api/auth/me                                   ║
-║                                                           ║
-║   - GET    /api/activities                                ║
-║   - POST   /api/activities                                ║
-║   - GET    /api/activities/:id                            ║
-║   - PUT    /api/activities/:id                            ║
-║   - DELETE /api/activities/:id/archive                    ║
-║                                                           ║
-║   - GET    /api/activity-elements                         ║
-║   - POST   /api/activity-elements                         ║
-║   - GET    /api/activity-elements/:id                     ║
-║   - PUT    /api/activity-elements/:id                     ║
-║   - DELETE /api/activity-elements/:id/archive             ║
-║                                                           ║
-║   - GET    /api/questions                                 ║
-║   - POST   /api/questions                                 ║
-║   - GET    /api/questions/:id                             ║
-║   - PUT    /api/questions/:id                             ║
-║   - DELETE /api/questions/:id/archive                     ║
-║                                                           ║
-║   - GET    /api/submissions                               ║
-║   - POST   /api/submissions                               ║
-║   - GET    /api/submissions/:id                           ║
-║   - PUT    /api/submissions/:id                           ║
-║   - DELETE /api/submissions/:id/archive                   ║
-║                                                           ║
-║   - GET    /api/submission-answers                        ║
-║   - POST   /api/submission-answers                        ║
-║   - GET    /api/submission-answers/:id                    ║
-║   - PUT    /api/submission-answers/:id                    ║
-║   - DELETE /api/submission-answers/:id/archive            ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                                                           ║
+║   🎓 iTeach Q&A Platform - Server Running (Sequelize)                    ║
+║                                                                           ║
+║   Port: ${PORT}                                                            ║
+║   Environment: ${process.env.NODE_ENV || 'development'}                                                        ║
+║   CORS Origin: ${process.env.CORS_ORIGIN || 'http://localhost:5173'}                                    ║
+║                                                                           ║
+║   📚 API Documentation:                                                   ║
+║   - Swagger UI:  http://localhost:${PORT}/api-doc                          ║
+║   - Swagger JSON: http://localhost:${PORT}/swagger.json                    ║
+║                                                                           ║
+║   🔧 Health Check:                                                        ║
+║   - GET http://localhost:${PORT}/health                                    ║
+║                                                                           ║
+║   🔐 Authentication Endpoints:                                            ║
+║   - POST   /api/auth/register                                             ║
+║   - POST   /api/auth/login                                                ║
+║   - GET    /api/auth/me                                                   ║
+║                                                                           ║
+║   📋 Activity Endpoints:                                                  ║
+║   - GET    /api/activities (list with filters)                            ║
+║   - POST   /api/activities (create)                                       ║
+║   - GET    /api/activities/:id (get with elements)                        ║
+║   - PUT    /api/activities/:id (update)                                   ║
+║   - DELETE /api/activities/:id/archive (archive)                          ║
+║   - GET    /api/activities/:id/versions (version history)                 ║
+║                                                                           ║
+║   🧩 Activity Element Endpoints:                                          ║
+║   - GET    /api/activity-elements (list with nesting)                     ║
+║   - POST   /api/activity-elements (create)                                ║
+║   - GET    /api/activity-elements/:id (get with children)                 ║
+║   - PUT    /api/activity-elements/:id (update)                            ║
+║   - DELETE /api/activity-elements/:id/archive (archive)                   ║
+║                                                                           ║
+║   ❓ Question Endpoints:                                                  ║
+║   - GET    /api/questions (list with filters)                             ║
+║   - POST   /api/questions (create)                                        ║
+║   - GET    /api/questions/:id (get)                                       ║
+║   - PUT    /api/questions/:id (update)                                    ║
+║   - DELETE /api/questions/:id/archive (archive)                           ║
+║                                                                           ║
+║   📝 Submission Endpoints:                                                ║
+║   - GET    /api/submissions (list)                                        ║
+║   - POST   /api/submissions (create)                                      ║
+║   - GET    /api/submissions/:id (get)                                     ║
+║   - PUT    /api/submissions/:id (update)                                  ║
+║   - DELETE /api/submissions/:id/archive (archive)                         ║
+║                                                                           ║
+║   ✍️  Submission Answer Endpoints:                                        ║
+║   - GET    /api/submission-answers (list)                                 ║
+║   - POST   /api/submission-answers (create)                               ║
+║   - GET    /api/submission-answers/:id (get)                              ║
+║   - PUT    /api/submission-answers/:id (update)                           ║
+║   - DELETE /api/submission-answers/:id/archive (archive)                  ║
+║                                                                           ║
+║   📊 Rubric Endpoints:                                                    ║
+║   - GET    /api/rubrics (list)                                            ║
+║   - POST   /api/rubrics (create)                                          ║
+║   - GET    /api/rubrics/:id (get with criteria)                           ║
+║   - PUT    /api/rubrics/:id (update)                                      ║
+║   - DELETE /api/rubrics/:id/archive (archive)                             ║
+║                                                                           ║
+║   🎯 Question Scoring Endpoints:                                          ║
+║   - POST   /api/question-scoring (configure)                              ║
+║   - GET    /api/question-scoring/:questionId (get config)                 ║
+║   - PUT    /api/question-scoring/:questionId (update)                     ║
+║   - DELETE /api/question-scoring/:questionId (delete)                     ║
+║                                                                           ║
+║   👉 Visit http://localhost:${PORT}/api-doc for interactive documentation  ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
       `);
     });
   } catch (error) {
